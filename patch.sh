@@ -19,8 +19,8 @@ if [ ! -d "DRS_parsing/evaluation" ]; then
     exit 1  # Exit with a non-zero status code to indicate an error
 fi
 
-cp -u -R Neural_DRS_patch/src src
-cp -u -R Neural_DRS_patch/DRS_parsing DRS_parsing
-echo "Successfully replaced files!"
+cp -u -R Neural_DRS_patch/src .
+cp -u -R Neural_DRS_patch/DRS_parsing .
+
 
 
