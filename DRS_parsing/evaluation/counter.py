@@ -141,6 +141,9 @@ def build_arg_parser():
 						help='Include REF clauses when matching -- will inflate the scores')
 	parser.add_argument("-rt", "--reference_input_token", action='store_true',
 						help="Keep the references linking DRS clauses to a token in the natural language input instead of discarding them")
+	parser.add_argument("-et", "--evaluate_token", action='store_true',
+						help="When comparing DRS clauses, take references to original token into account and only consider a clause pair to be matching"
+							 "if their token references also match")
 	args = parser.parse_args()
 
 	# Check if files exist

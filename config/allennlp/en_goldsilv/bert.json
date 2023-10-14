@@ -34,6 +34,7 @@
     },
     "train_data_path": "data/3.0.0/en/gold_silver/train.alp",
     "validation_data_path": "data/3.0.0/en/gold/dev.alp",
+    "test_data_path": "data/3.0.0/en/gold/test.alp",
     "model": {
         "type": "composed_seq2seq",
         "source_text_embedder": {
@@ -89,7 +90,7 @@
     },
     "iterator": {
         "type": "basic",
-        "batch_size": 2
+        "batch_size": 24
     },
     "trainer": {
         "optimizer": {

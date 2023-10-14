@@ -444,11 +444,8 @@ def tokenRef_match(clause_prod, clause_gold):
 	else: #clause of size 7 (4 + 3 elements for the token references)
 		origin_token_idx, charseq_start_idx, charseq_end_idx = 4, 5, 6
 
-	try:
-		origin_token_p, charseq_start_p, charseq_end_p = clause_prod[origin_token_idx], clause_prod[charseq_start_idx], clause_prod[charseq_end_idx]
-		origin_token_g, charseq_start_g, charseq_end_g = clause_gold[origin_token_idx], clause_gold[charseq_start_idx], clause_gold[charseq_end_idx]
-	except:
-		print("manha")
+	origin_token_p, charseq_start_p, charseq_end_p = clause_prod[origin_token_idx], clause_prod[charseq_start_idx], clause_prod[charseq_end_idx]
+	origin_token_g, charseq_start_g, charseq_end_g = clause_gold[origin_token_idx], clause_gold[charseq_start_idx], clause_gold[charseq_end_idx]
 
 	if origin_token_g == origin_token_p and charseq_start_g == charseq_start_p and charseq_end_g == charseq_end_p:
 		return True
@@ -491,7 +488,14 @@ def map_two_vars_edges(clauses_prod, clauses_gold, prod_drs, gold_drs, edge_numb
 				else:
 					allowed_edge = True
 				# We do not do partial matching, normal case -- everything should match
-				if (allowed_var1 and allowed_var2 and allowed_edge and (not args.reference_input_token or tokenRef_match(clauses_prod[i], clauses_gold[j])) and
+				if args.reference_input_token:
+					if args.evaluate_token:
+						tokenmatch = tokenRef_match(clauses_prod[i], clauses_gold[j])
+					else:
+						tokenmatch = True
+				else:
+					tokenmatch = True
+				if (allowed_var1 and allowed_var2 and allowed_edge and tokenmatch and
 						normalize(clauses_prod[i][edge_numbers[0]]) == normalize(clauses_gold[j][edge_numbers[0]])):
 					weight_score = 1    # clause matches for 1
 					no_match = ''       # since we do not partial matching no_match is empty
