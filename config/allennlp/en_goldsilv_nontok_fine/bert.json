@@ -90,7 +90,7 @@
     },
     "iterator": {
         "type": "basic",
-        "batch_size": 24
+        "batch_size": 36
     },
     "trainer": {
         "optimizer": {

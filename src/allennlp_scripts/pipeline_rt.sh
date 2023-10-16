@@ -172,7 +172,7 @@ START=1
 if [[ $3 = "fine" || $3 = "finetune"  || $3 = "finetuning" ]]; then
     END=5
 else
-    END=5
+    END=1
 fi
 
 # Set start run and print to screen
