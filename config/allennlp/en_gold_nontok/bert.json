@@ -32,8 +32,9 @@
         "source_max_tokens": 125,
         "target_max_tokens": 1160,
     },
-    "train_data_path": "DRS_parsing/data/pmb-3.0.0/gold/train.alp",
-    "validation_data_path": "DRS_parsing/data/pmb-3.0.0/gold/dev.alp",
+    "train_data_path": "data/3.0.0/en/gold/train.alp",
+    "validation_data_path": "data/3.0.0/en/gold/dev.alp",
+    "test_data_path": "data/3.0.0/en/gold/test.alp",
     "model": {
         "type": "composed_seq2seq",
         "source_text_embedder": {
@@ -89,7 +90,7 @@
     },
     "iterator": {
         "type": "basic",
-        "batch_size": 36
+        "batch_size": 18
     },
     "trainer": {
         "optimizer": {

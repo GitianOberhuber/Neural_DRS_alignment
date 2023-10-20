@@ -480,8 +480,8 @@ def main():
 
 
         # Write all output files we want to keep, input to model and human readable var format
-        write_to_file(rewritten_drss, args.input_file + args.char_drs_ext + (".tokref" if args.reference_input_token else ""))
-        write_list_of_lists(var_drss, args.input_file + args.var_drs_ext + (".tokref" if args.reference_input_token else ""))
+        write_to_file(rewritten_drss, args.input_file + args.char_drs_ext + (".rt" if args.reference_input_token else ""))
+        write_list_of_lists(var_drss, args.input_file + args.var_drs_ext + (".rt" if args.reference_input_token else ""))
 
     # Print sentences all the way at the end, because we might want to remove certain sents by idx
     # because their DRS was ill-formed (which we don't check until later). Do that check here
