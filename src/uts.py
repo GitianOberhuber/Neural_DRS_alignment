@@ -143,7 +143,7 @@ def drs_string_to_list(drs, referenceInputToken = False):
         for i, cl in enumerate(drs):
             #insert blank for missing token references
             if len(cl) < 6:
-                cl.extend(['0','0','UNK'])
+                cl.extend(['UNK','0','0'])
     else:
         drs = [x for x in drs if x.strip() and not x.startswith('%')]
         drs = [clause.split()[0:clause.split().index('%')] if '%' in clause.split()

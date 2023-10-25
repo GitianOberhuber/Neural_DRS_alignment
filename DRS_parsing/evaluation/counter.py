@@ -178,7 +178,7 @@ def build_arg_parser():
 	return args
 
 
-def remove_refs(clause_list, original_clauses):
+def remove_refs(clause_list, original_clauses, rt = False):
 	'''Remove unneccessary/redundant b REF x clauses, only keep them if x never occurs again in the same box'''
 	final_clauses, final_original = [], []
 	for tup_idx, tup_set in enumerate(clause_list):
@@ -186,7 +186,7 @@ def remove_refs(clause_list, original_clauses):
 		cur_orig = []
 		for idx, spl_tup in enumerate(tup_set):
 			if spl_tup[1] == 'REF':
-				if not var_occurs(tup_set, spl_tup[2], spl_tup[0], idx):  # only add if the variable does not occur afterwards
+				if not var_occurs(tup_set, spl_tup[2], spl_tup[0], idx, rt):  # only add if the variable does not occur afterwards
 					cur_tup.append(spl_tup)
 					cur_orig.append(original_clauses[tup_idx][idx])
 			else:
@@ -241,6 +241,13 @@ def get_clauses(file_name, signature, ill_type, rt = False):
 
 				else:
 					cur_clauses.append(line.split(' %', 1)[0].strip().split()) #remove comments
+					#ls = line.split(' %', 1)[0].strip().split()
+					#if len(ls) > 4:
+					#	if len(ls) == 5:
+				#			ls = ls[:3]
+					#	else:
+					#		ls = ls[:4]
+					#cur_clauses.append(ls)
 				cur_orig.append(line)
 
 	if cur_clauses:  # no newline at the end, still add the DRS
@@ -251,30 +258,42 @@ def get_clauses(file_name, signature, ill_type, rt = False):
 	inv_boxes = DRS(signature).inv_boxes
 	for drs in clause_list:
 		for clause in drs:
-			if len(clause) == 4 and is_role(clause[1]) and clause[1].endswith('Of') and len(clause[1]) > 2:
-				# Switch clauses and remove the -Of
-				clause[2], clause[3] = clause[3], clause[2]
-				clause[1] = clause[1][:-2]
-			elif clause[1] in inv_boxes and len(clause) == 4 and between_quotes(clause[2]) and not between_quotes(clause[3]):
-				# b1 NEQ x1 x2 is equal to b1 NEQ x2 x1
-				# If one of the two arguments is between quotes, rewrite them in such a way
-				# that it can always match
-				# For example rewrite b1 NEQ "speaker" x1 to b1 NEQ x1 "speaker"
-				# If there are two variables or two items between quotes, do nothing
-				clause[2], clause[3] = clause[3], clause[2]
+			if rt:
+				if len(clause) == 7 and is_role(clause[1]) and clause[1].endswith('Of') and len(clause[1]) > 2:
+					clause[2], clause[3] = clause[3], clause[2]
+					clause[1] = clause[1][:-2]
+				elif clause[1] in inv_boxes and len(clause) == 7 and between_quotes(clause[2]) and not between_quotes(clause[3]):
+					clause[2], clause[3] = clause[3], clause[2]
+			else:
+				if len(clause) == 4 and is_role(clause[1]) and clause[1].endswith('Of') and len(clause[1]) > 2:
+					# Switch clauses and remove the -Of
+					clause[2], clause[3] = clause[3], clause[2]
+					clause[1] = clause[1][:-2]
+				elif clause[1] in inv_boxes and len(clause) == 4 and between_quotes(clause[2]) and not between_quotes(clause[3]):
+					# b1 NEQ x1 x2 is equal to b1 NEQ x2 x1
+					# If one of the two arguments is between quotes, rewrite them in such a way
+					# that it can always match
+					# For example rewrite b1 NEQ "speaker" x1 to b1 NEQ x1 "speaker"
+					# If there are two variables or two items between quotes, do nothing
+					clause[2], clause[3] = clause[3], clause[2]
 
 	# If we want to include REF clauses we are done now
 	if args.include_ref:
 		return clause_list, original_clauses
 	else: #else remove redundant REF clauses
-		final_clauses, final_original = remove_refs(clause_list, original_clauses)
+		final_clauses, final_original = remove_refs(clause_list, original_clauses, rt)
 		return final_clauses, final_original
 
 
-def var_occurs(clauses, var, box, idx):
+def var_occurs(clauses, var, box, idx, rt = False):
 	'''Check if variable occurs with same box in one of the next clauses'''
 	for cur_idx in range(0, len(clauses)):
 		spl_tup = clauses[cur_idx]
+		if rt:
+			if len(spl_tup) == 6:
+				spl_tup = spl_tup[:3]
+			elif len(spl_tup) == 7:
+				spl_tup = spl_tup[:4]
 		if cur_idx != idx and spl_tup[0] == box and (var == spl_tup[-1] or var == spl_tup[-2]):
 			return True
 	return False
@@ -797,8 +816,11 @@ def main(args):
 	res = []
 
 	# Get all the clauses and check if they are valid
-	clauses_gold_list, original_gold = get_clauses(args.f2, signature, args.ill, args.reference_input_token)
 	clauses_prod_list, original_prod = get_clauses(args.f1, signature, args.ill, args.reference_input_token)
+
+	clauses_gold_list, original_gold = get_clauses(args.f2, signature, args.ill, args.reference_input_token)
+
+
 
 	# Count ill-DRSs in the system output
 	global ill_drs_ids
