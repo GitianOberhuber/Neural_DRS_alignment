@@ -28,8 +28,8 @@ if $option_rt; then
     done
     
     PIPELINE="src/allennlp_scripts/pipeline_rt.sh"
-    CONFIG="config/allennlp/en_gold_tok/"
-    EXPS="experiments/allennlp/en_gold_tok/"
+    CONFIG="config/allennlp/en_default/en_gold_tok/"
+    EXPS="experiments/allennlp/en_default/en_gold_tok/"
 else
     echo "Performing preprocessing WITHOUT token references..." ;sleep 1
     echo "Creating gold .alp file..." ;sleep 1
@@ -47,8 +47,8 @@ else
     done
     
     PIPELINE="src/allennlp_scripts/pipeline.sh"
-    CONFIG="config/allennlp/en_gold_nontok/"
-    EXPS="experiments/allennlp/en_gold_nontok/"
+    CONFIG="config/allennlp/en_default/en_gold_nontok/"
+    EXPS="experiments/allennlp/en_default/en_gold_nontok/"
 fi
     
 echo "Training model on gold data..." ;sleep 1

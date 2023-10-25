@@ -45,15 +45,15 @@ if $option_rt; then
     done
     
     PIPELINE="src/allennlp_scripts/pipeline_rt.sh"
-    CONFIG="config/allennlp/en_default/en_goldsilv_tok/"
-    EXPS="experiments/allennlp/en_default/en_goldsilv_tok/"
+    CONFIG="config/allennlp/en_large/en_goldsilv_tok/"
+    EXPS="experiments/allennlp/en_large/en_goldsilv_tok/"
     
     echo "Training model on gold data..." ;sleep 1
 
     mkdir -p $EXPS
     $PIPELINE ${CONFIG}/bert.json ${EXPS}/bert/ normal en
     echo "Fine-tuning model on gold data..." ;sleep 1
-    CONFIG="config/allennlp/en_default/en_goldsilv_tok_tune/" #only difference from old config file: train_data_path points to gold data (as opposed to gold+silver)
+    CONFIG="config/allennlp/en_large/en_goldsilv_tok_tune/" #only difference from old config file: train_data_path points to gold data (as opposed to gold+silver)
 else
     echo "Performing preprocessing WITHOUT token references..." ;sleep 1
     echo "Creating gold .alp file..." ;sleep 1
@@ -88,15 +88,15 @@ else
     done
     
     PIPELINE="src/allennlp_scripts/pipeline.sh"
-    CONFIG="config/allennlp/en_default/en_goldsilv_nontok/"
-    EXPS="experiments/allennlp/en_default/en_goldsilv_nontok/"
+    CONFIG="config/allennlp/en_large/en_goldsilv_nontok/"
+    EXPS="experiments/allennlp/en_large/en_goldsilv_nontok/"
     
     echo "Training model on gold data..." ;sleep 1
 
     mkdir -p $EXPS
     $PIPELINE ${CONFIG}/bert.json ${EXPS}/bert/ normal en
     echo "Fine-tuning model on gold data..." ;sleep 1
-    CONFIG="config/allennlp/en_default/en_goldsilv_nontok_tune/" #only difference from old config file: train_data_path points to gold data (as opposed to gold+silver)
+    CONFIG="config/allennlp/en_large/en_goldsilv_nontok_tune/" #only difference from old config file: train_data_path points to gold data (as opposed to gold+silver)
 fi
 
 $PIPELINE ${CONFIG}/bert.json ${EXPS}/bert/ fine en
