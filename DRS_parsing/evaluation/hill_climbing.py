@@ -433,7 +433,7 @@ def add_single_var_mapping(node1_index, node2_index, candidate_mapping, weight_d
 
 	return candidate_mapping, weight_dict
 
-def tokenRef_match(clause_prod, clause_gold):
+def tokenRef_match(clause_prod, clause_gold, match_tokenIdxs = True):
 	'''
 	Checks if the token references of two clauses are exactly equal (same start- and end-index as well as token)
 	'''
@@ -447,8 +447,9 @@ def tokenRef_match(clause_prod, clause_gold):
 	origin_token_p, charseq_start_p, charseq_end_p = clause_prod[origin_token_idx], clause_prod[charseq_start_idx], clause_prod[charseq_end_idx]
 	origin_token_g, charseq_start_g, charseq_end_g = clause_gold[origin_token_idx], clause_gold[charseq_start_idx], clause_gold[charseq_end_idx]
 
-	if origin_token_g == origin_token_p and charseq_start_g == charseq_start_p and charseq_end_g == charseq_end_p:
-		return True
+	if origin_token_g == origin_token_p:
+		if not match_tokenIdxs or (charseq_start_g == charseq_start_p and charseq_end_g == charseq_end_p):
+			return True
 	else:
 		return False
 
@@ -490,7 +491,7 @@ def map_two_vars_edges(clauses_prod, clauses_gold, prod_drs, gold_drs, edge_numb
 				# We do not do partial matching, normal case -- everything should match
 				if args.reference_input_token:
 					if args.evaluate_token:
-						tokenmatch = tokenRef_match(clauses_prod[i], clauses_gold[j])
+						tokenmatch = tokenRef_match(clauses_prod[i], clauses_gold[j], match_tokenIdxs = args.evaluate_indices)
 					else:
 						tokenmatch = True
 				else:

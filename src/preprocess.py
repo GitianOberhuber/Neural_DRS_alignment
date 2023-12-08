@@ -259,9 +259,10 @@ class RewriteVariables:
                 self.new_clauses.append([first_var, cur_clause[1], second_var])
         else:  # Otherwise it is (or should be) a discourse variable
             second_var = self.get_disc_var(cur_clause[2])
-
-            self.new_clauses.append([first_var, cur_clause[1], second_var, origin_token, charseq_start, charseq_end])
-
+            if rt:
+                self.new_clauses.append([first_var, cur_clause[1], second_var, origin_token, charseq_start, charseq_end])
+            else:
+                self.new_clauses.append([first_var, cur_clause[1], second_var])
     def rewrite_length_four(self, cur_clause, rt = False):
         '''Rewrite clauses of length 4, only rewrites, no introductions'''
         first_var = self.get_box_var(cur_clause[0])

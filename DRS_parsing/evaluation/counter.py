@@ -78,7 +78,7 @@ from html_results import coda_html
 from utils_counter import *
 
 
-def build_arg_parser():
+def build_arg_parser(args = None):
 	parser = argparse.ArgumentParser(description="Counter calculator -- arguments")
 	# Main arguments
 	parser.add_argument('-f1', required=True, type=str,
@@ -144,7 +144,15 @@ def build_arg_parser():
 	parser.add_argument("-et", "--evaluate_token", action='store_true',
 						help="When comparing DRS clauses, take references to original token into account and only consider a clause pair to be matching"
 							 "if their token references also match")
-	args = parser.parse_args()
+	parser.add_argument("-ei", "--evaluate_indices", action='store_true',
+						help="When comparing DRS clauses, take references to original token start- and end-index into account and only consider a clause pair to be matching"
+							 "if their token indices also match")
+
+	if args is not None:
+		args = args.split()
+		args = parser.parse_args(args)
+	else:
+		args = parser.parse_args()
 
 	# Check if files exist
 	if not os.path.exists(args.f1):
@@ -211,7 +219,7 @@ def get_clauses(file_name, signature, ill_type, rt = False):
 					# First check if the DRS is valid, will error if invalid
 					try:
 						#f = drs_string_to_list(cur_clauses, rt)
-						check_clf([tuple(c) for c in cur_clauses], signature, v=False, rt = args.reference_input_token)
+						check_clf([tuple(c) for c in cur_clauses], signature, v=False, rt = rt)
 						clause_list.append(cur_clauses)
 						original_clauses.append(cur_orig)
 					except Exception as e:
@@ -278,8 +286,8 @@ def get_clauses(file_name, signature, ill_type, rt = False):
 					clause[2], clause[3] = clause[3], clause[2]
 
 	# If we want to include REF clauses we are done now
-	if args.include_ref:
-		return clause_list, original_clauses
+	#if args.include_ref:
+	#	return clause_list, original_clauses
 	else: #else remove redundant REF clauses
 		final_clauses, final_original = remove_refs(clause_list, original_clauses, rt)
 		return final_clauses, final_original
@@ -501,7 +509,7 @@ def get_matching_clauses(arg_list):
 		return [best_match_num, prod_drs.total_clauses, gold_drs.total_clauses, smart_fscores, found_idx, match_division, prod_clause_division, gold_clause_division, len(prod_drs.var_map), idv_dict]
 
 
-def print_results(res_list, no_print, start_time, single, args):
+def print_results(res_list, no_print, start_time, single, args, verbose = True):
 	'''Print the final or inbetween scores -- res_list has format '''
 
 	# Calculate average scores
@@ -528,18 +536,19 @@ def print_results(res_list, no_print, start_time, single, args):
 	elif no_print:  # averaging over multiple runs, don't print results
 		return [precision, recall, best_f_score]
 	else:
-		print('\n## Clause information ##\n')
-		print('Clauses prod : {0}'.format(total_test_num))
-		print('Clauses gold : {0}\n'.format(total_gold_num))
-		if args.max_clauses > 0:
-			print('Max number of clauses per DRS:  {0}\n'.format(args.max_clauses))
-		print('## Main Results ##\n')
-		if not single:
-			print('All shown number are micro-averages calculated over {0} DRS-pairs\n'.format(len(res_list)))
-		print('Matching clauses: {0}\n'.format(total_match_num))
-		print("Precision: {0}".format(round(precision, args.significant)))
-		print("Recall   : {0}".format(round(recall, args.significant)))
-		print("F-score  : {0}".format(round(best_f_score, args.significant)))
+		if verbose:
+			print('\n## Clause information ##\n')
+			print('Clauses prod : {0}'.format(total_test_num))
+			print('Clauses gold : {0}\n'.format(total_gold_num))
+			if args.max_clauses > 0:
+				print('Max number of clauses per DRS:  {0}\n'.format(args.max_clauses))
+			print('## Main Results ##\n')
+			if not single:
+				print('All shown number are micro-averages calculated over {0} DRS-pairs\n'.format(len(res_list)))
+			print('Matching clauses: {0}\n'.format(total_match_num))
+			print("Precision: {0}".format(round(precision, args.significant)))
+			print("Recall   : {0}".format(round(recall, args.significant)))
+			print("F-score  : {0}".format(round(best_f_score, args.significant)))
 
 		# Print specific output here
 		if args.prin:
@@ -565,31 +574,37 @@ def print_results(res_list, no_print, start_time, single, args):
 			with codecs.open(args.codalab+'.html', 'w', encoding='UTF-8') as html:
 				html.write(html_content)
 
-	print('Total processing time: {0} sec'.format(runtime))
+	if verbose:
+		print('Total processing time: {0} sec'.format(runtime))
 	return [precision, recall, best_f_score]
 
 
-def check_input(clauses_prod_list, original_prod, original_gold, clauses_gold_list, baseline, f1, max_clauses, single):
+def check_input(clauses_prod_list, original_prod, original_gold, clauses_gold_list, baseline, f1, max_clauses, single, verbose = False):
 	'''Check if the input is valid -- or fill baseline if that is asked'''
 	if baseline:  # if we try a baseline DRS, we have to fill a list of this baseline
 		if len(clauses_prod_list) == 1:
-			print('Testing baseline DRS vs {0} DRSs...\n'.format(len(clauses_gold_list)))
+			if verbose:
+				print('Testing baseline DRS vs {0} DRSs...\n'.format(len(clauses_gold_list)))
 			clauses_prod_list = fill_baseline_list(clauses_prod_list[0], clauses_gold_list)
 			original_prod = fill_baseline_list(original_prod[0], original_gold)
 		else:
 			raise ValueError("Using --baseline, but there is more than 1 DRS in prod file")
 	elif len(clauses_prod_list) != len(clauses_gold_list):
-		print("Number of DRSs not equal, {0} vs {1}, exiting...".format(len(clauses_prod_list), len(clauses_gold_list)))
+		if verbose:
+			print("Number of DRSs not equal, {0} vs {1}, exiting...".format(len(clauses_prod_list), len(clauses_gold_list)))
 		sys.exit(0)
 	elif len(clauses_prod_list) == 0 and len(clauses_gold_list) == 0:
-		print("Both DRSs empty, exiting...")
+		if verbose:
+			print("Both DRSs empty, exiting...")
 		sys.exit(0)
 	elif not single:
-		print('Comparing {0} DRSs...\n'.format(len(clauses_gold_list)))
+		if verbose:
+			print('Comparing {0} DRSs...\n'.format(len(clauses_gold_list)))
 
 	# Print number of DRSs we skip due to the -max_clauses parameter
 	if max_clauses > 0 and not single:
-		print('Skipping {0} DRSs due to their length exceeding {1} (--max_clauses)\n'.format(len([x for x, y in zip(clauses_gold_list, clauses_prod_list) if len(x) > max_clauses or len(y) > max_clauses]), max_clauses))
+		if verbose:
+			print('Skipping {0} DRSs due to their length exceeding {1} (--max_clauses)\n'.format(len([x for x, y in zip(clauses_gold_list, clauses_prod_list) if len(x) > max_clauses or len(y) > max_clauses]), max_clauses))
 	return original_prod, clauses_prod_list
 
 
@@ -805,7 +820,7 @@ def save_stats(all_clauses, all_vars, stat_file):
 	pickle.dump(dump_lists, open(stat_file, 'w'))
 
 
-def main(args):
+def main(args, verbose = True):
 	'''Main function of counter score calculation'''
 	start = time.time()
 
@@ -833,7 +848,7 @@ def main(args):
 	single = True if len(clauses_gold_list) == 1 else False  # true if we are doing a single DRS
 
 	# Check if correct input (number of instances, baseline, etc)
-	original_prod, clauses_prod_list = check_input(clauses_prod_list, original_prod, original_gold, clauses_gold_list, args.baseline, args.f1, args.max_clauses, single)
+	original_prod, clauses_prod_list = check_input(clauses_prod_list, original_prod, original_gold, clauses_gold_list, args.baseline, args.f1, args.max_clauses, single, verbose = verbose)
 
 	# Processing clauses
 	for _ in range(args.runs):  # for experiments we want to more runs so we can average later
@@ -856,12 +871,12 @@ def main(args):
 			all_clauses = [x[1] for x in all_results]
 			all_vars = [x[7] for x in all_results]
 			if not args.stats:
-				res.append(print_results(all_results, no_print, start, single, args))
+				res.append(print_results(all_results, no_print, start, single, args, verbose))
 		else:
 			raise ValueError('No results found')
 
 	# If multiple runs, print averages
-	if res and args.runs > 1 and not args.stats:
+	if res and args.runs > 1 and not args.stats and verbose:
 		print('Average scores over {0} runs:\n'.format(args.runs))
 		print('Precision: {0}'.format(round(float(sum([x[0] for x in res])) / float(args.runs), args.significant)))
 		print('Recall   : {0}'.format(round(float(sum([x[1] for x in res])) / float(args.runs), args.significant)))
@@ -892,6 +907,7 @@ def main(args):
 	# We might want to output statistics about individual types of clauses
 	if args.detailed_stats > 0:
 		save_detailed_stats([x[9] for x in all_results], args)
+	return round(float(sum([x[0] for x in res])) / float(args.runs), args.significant), round(float(sum([x[1] for x in res])) / float(args.runs), args.significant), round(float(sum([x[2] for x in res])) / float(args.runs), args.significant)
 
 ERROR_LOG = sys.stderr
 DEBUG_LOG = sys.stderr
