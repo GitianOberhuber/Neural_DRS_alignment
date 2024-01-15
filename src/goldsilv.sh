@@ -47,13 +47,14 @@ if $option_rt; then
     PIPELINE="src/allennlp_scripts/pipeline_rt.sh"
     CONFIG="config/allennlp/en_default/en_goldsilv_tok/"
     EXPS="experiments/allennlp/en_default/en_goldsilv_tok/"
-    
+    RES="experiments/allennlp/en_default/en_goldsilv_tok/bert/run1"
+
     echo "Training model on gold data..." ;sleep 1
 
     mkdir -p $EXPS
     $PIPELINE ${CONFIG}/bert.json ${EXPS}/bert/ normal en
     echo "Fine-tuning model on gold data..." ;sleep 1
-    CONFIG="config/allennlp/en_default/en_goldsilv_tok_tune/" #only difference from old config file: train_data_path points to gold data (as opposed to gold+silver)
+    CONFIG="config/allennlp/en_default/en_goldsilv_tok_fine/" #only difference from old config file: train_data_path points to gold data (as opposed to gold+silver)
 else
     echo "Performing preprocessing WITHOUT token references..." ;sleep 1
     echo "Creating gold .alp file..." ;sleep 1
@@ -69,7 +70,7 @@ else
 		echo -e "${line1}\t${line2}"
 	done < data/3.0.0/en/gold/${type}.txt.raw.tok  3< data/3.0.0/en/gold/${type}.txt.tgt > data/3.0.0/en/gold/${type}.alp
     done
-    
+
     #gold_silver contains only training data, dev and test are found in gold
     #both training data of gold_silver and only gold are needed , for training and finetuning respectively
     echo "Creating gold+silver .alp file..." ;sleep 1
@@ -86,21 +87,25 @@ else
 		echo -e "${line1}\t${line2}"
 	done < data/3.0.0/en/gold_silver/${type}.txt.raw.tok  3< data/3.0.0/en/gold_silver/${type}.txt.tgt > data/3.0.0/en/gold_silver/${type}.alp
     done
-    
+
     PIPELINE="src/allennlp_scripts/pipeline.sh"
     CONFIG="config/allennlp/en_default/en_goldsilv_nontok/"
     EXPS="experiments/allennlp/en_default/en_goldsilv_nontok/"
-    
+    RES="experiments/allennlp/en_default/en_goldsilv_nontok/bert/run1"
+
     echo "Training model on gold data..." ;sleep 1
 
     mkdir -p $EXPS
     $PIPELINE ${CONFIG}/bert.json ${EXPS}/bert/ normal en
     echo "Fine-tuning model on gold data..." ;sleep 1
-    CONFIG="config/allennlp/en_default/en_goldsilv_nontok_tune/" #only difference from old config file: train_data_path points to gold data (as opposed to gold+silver)
+    CONFIG="config/allennlp/en_default/en_goldsilv_nontok_fine/" #only difference from old config file: train_data_path points to gold data (as opposed to gold+silver)
 fi
+
 
 $PIPELINE ${CONFIG}/bert.json ${EXPS}/bert/ fine en
 
+EPOCHS=$(cat "${CONFIG}/bert.json" | sed -e 's/,/\n/g' | grep 'num_epochs"' | grep -oP "\d+")
+python DRS_parsing/evaluation/summarize_results.py -d1 $RES -d2 data/3.0.0/en/gold -si DRS_parsing/evaluation/clf_signature.yaml -e $EPOCHS > "${RES}/result_overview.txt"
 
 echo
 echo "If you see this, the experiments did not throw any errors"

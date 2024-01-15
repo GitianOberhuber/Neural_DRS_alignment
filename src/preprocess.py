@@ -372,13 +372,20 @@ def sanitize_variables(drs, rt = False):
     return new_clauses
 
 
-def word_level_drs(new_clauses, sep):
+def word_level_drs(new_clauses, sep, rt = False):
     '''Return to string-format, keep word-level for concepts'''
     return_strings = []
+
     for cur_clause in new_clauses:
         ret_str = ''
-        for item in cur_clause:
-            ret_str += ' ' + item + ' '
+        for i, item in enumerate(cur_clause):
+            if rt:
+                if (i == len(cur_clause) - 4):
+                    ret_str += ' ' + item + ' % '
+                else:
+                    ret_str += ' ' + item + ' '
+            else:
+                ret_str += ' ' + item + ' '
         return_strings.append(" ".join(ret_str.rstrip(sep).strip().split()))
     return return_strings
 
@@ -436,7 +443,7 @@ def rewrite_drss(drss, variable_type, representation, sep, referenceInputToken =
 
         var_drss.append([" ".join(x) for x in rewritten_drs])
         # Put in correct representation
-        processed_drs = word_level_drs(rewritten_drs, sep) if representation == 'word' \
+        processed_drs = word_level_drs(rewritten_drs, sep, rt = referenceInputToken) if representation == 'word' \
                         else char_level_drs(rewritten_drs, sep)
         # Insert special clause separation character
         rewritten_drss.append(" *** ".join(processed_drs))

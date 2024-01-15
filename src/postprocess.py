@@ -236,21 +236,21 @@ class RestoreVariables:
     def rewrite_length_two_three_rt(self, cur_clause):
         '''Rewrite clauses of length two or three'''
         first_var = self.get_variable(cur_clause[0], True)
-        if len(cur_clause) == 5:
-            origin_token, charseq_start, charseq_end = cur_clause[2], cur_clause[3], cur_clause[4]
+        if len(cur_clause) == 6:
+            alignSep, origin_token, charseq_start, charseq_end = cur_clause[2], cur_clause[3], cur_clause[4], cur_clause[5]
         else:
-            origin_token, charseq_start, charseq_end = cur_clause[3], cur_clause[4], cur_clause[5]
+            alignSep, origin_token, charseq_start, charseq_end = cur_clause[3], cur_clause[4], cur_clause[5], cur_clause[6]
         if cur_clause[1] == self.ref and self.var_type == "rel":
             # REF is only special case for relative rewriting
             self.cur_var += 1
-            self.new_clauses.append([first_var, self.ref, self.pp_info.var_id + str(self.cur_var), origin_token, charseq_start, charseq_end])
+            self.new_clauses.append([first_var, self.ref, self.pp_info.var_id + str(self.cur_var), alignSep, origin_token, charseq_start, charseq_end])
         elif cur_clause[1] in op_boxes:
             second_var = self.get_variable(cur_clause[2], True)
-            self.new_clauses.append([first_var, cur_clause[1], second_var, origin_token, charseq_start, charseq_end])
+            self.new_clauses.append([first_var, cur_clause[1], second_var, alignSep, origin_token, charseq_start, charseq_end])
         else:
             # Just treat second item as normal disc variable
             second_var = self.get_variable(cur_clause[2], False)
-            self.new_clauses.append([first_var, cur_clause[1], second_var, origin_token, charseq_start, charseq_end])
+            self.new_clauses.append([first_var, cur_clause[1], second_var, alignSep, origin_token, charseq_start, charseq_end])
 
     def rewrite_length_two_three(self, cur_clause, rt = False):
         '''Rewrite clauses of length two or three'''
@@ -293,7 +293,7 @@ class RestoreVariables:
         '''Rewrite clauses of length four in relative manner'''
         first_var = self.get_variable(cur_clause[0], True)
         second_var, third_var = cur_clause[2], cur_clause[3]  # defaults
-        origin_token, charseq_start, charseq_end = cur_clause[4], cur_clause[5], cur_clause[6]
+        alignSep, origin_token, charseq_start, charseq_end = cur_clause[4], cur_clause[5], cur_clause[6], cur_clause[7]
         # First do second variable, then do third variable
         if not between_quotes(cur_clause[2]):
             second_var = self.get_variable(cur_clause[2], cur_clause[1] in op_boxes)
@@ -310,7 +310,7 @@ class RestoreVariables:
             # third_var = '"tom"'
         else:
             # Add the final clause
-            self.new_clauses.append([first_var, cur_clause[1], second_var, third_var, origin_token, charseq_start, charseq_end])
+            self.new_clauses.append([first_var, cur_clause[1], second_var, third_var, alignSep, origin_token, charseq_start, charseq_end])
 
     def rewrite_variables(self, rt = False):
         '''Rewrite the variables from relative/absolute naming to original naming'''
@@ -318,9 +318,9 @@ class RestoreVariables:
             try:
                 cur_clause = clause_string.split()
                 if rt:
-                    if len(cur_clause) in [5, 6]:  # Clause has 2 or 3 items + tokenref and beginning and end-idx
+                    if len(cur_clause) in [6, 7]:  # Clause has 2 or 3 items + tokenref and beginning and end-idx
                         self.rewrite_length_two_three_rt(cur_clause)
-                    elif len(cur_clause) == 7:  # Clause has 4 items + tokenref and beginning and end-idx
+                    elif len(cur_clause) == 8:  # Clause has 4 items + tokenref and beginning and end-idx
                         self.rewrite_length_four_rt(cur_clause)
                     else:
                         self.pp_info.pp_dict["wrong arity"].append(self.pp_info.cur_idx)

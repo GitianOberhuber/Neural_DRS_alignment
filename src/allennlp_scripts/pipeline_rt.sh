@@ -108,7 +108,7 @@ pp_and_counter(){
             else
                 vocab_file="${1}/vocabulary/tokens.txt"
             fi
-            python $PP_PY --input_file $2 --output_file ${2}.out --sig_file $SIG_FILE --fix --json --sep $SEP -rcl $REMOVE_CLAUSES -m $MIN_TOKENS -rt -et -voc $vocab_file $no_sep > ${1}log/$4_pp$3.log
+            python $PP_PY --input_file $2 --output_file ${2}.out --sig_file $SIG_FILE --fix --json --sep $SEP -rcl $REMOVE_CLAUSES -m $MIN_TOKENS -rt -voc $vocab_file $no_sep > ${1}log/$4_pp$3.log
 
             # Run Counter evaluation
             python $COUNTER -f1 ${2}.out -f2 $5 -g $SIG_FILE -rt -prin > ${1}eval/$4_eval$3.txt

@@ -245,6 +245,7 @@ def get_clauses(file_name, signature, ill_type, rt = False):
 				if rt:
 					tmp = drs_string_to_list([line], rt)
 					tmp = filter_drs_doubleComment(tmp)
+					tmp[0].insert(-3, '%')
 					cur_clauses.append(tmp[0])
 
 				else:

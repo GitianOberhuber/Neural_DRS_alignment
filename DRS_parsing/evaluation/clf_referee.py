@@ -111,15 +111,16 @@ def clause_typing(clause, signature, v=0, rt = False):
     '''checks well-formedness of a clause (context insensitive)
        and returns its main operator type with the types of variables
     '''
-    orig_clause = clause
     if rt:
         #ignore token references as they are not relevant for correctness of the clause
-        if len(clause) > 7:
+        tmp_clause = tuple(element for element in clause if element != '%')
+
+        if len(tmp_clause) > 7:
             report_error("Too many elements in a clause || {}".format(clause), v=v)
-        if len(clause) == 7:
-            clause = clause[:4]
+        if len(tmp_clause) == 7:
+            clause = tmp_clause[:4]
         else:
-            clause = clause[:3]
+            clause = tmp_clause[:3]
     else:
         if len(clause) > 4:
             report_error("Too many elements in a clause || {}".format(clause), v=v)
@@ -402,7 +403,7 @@ def clf_to_box_dict(clf, op_types, arg_typing, v=0, rt = False):
 
         if rt:
             # ignore token references as they are not relevant for correctness of the clause
-            if len(cl) == 7:
+            if len(cl) == 8:
                 cl = cl[:4]
             else:
                 cl = cl[:3]
