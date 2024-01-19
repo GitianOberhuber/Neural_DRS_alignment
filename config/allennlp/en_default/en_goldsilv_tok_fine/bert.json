@@ -63,15 +63,19 @@
             "type": "auto_regressive_seq_decoder",
             "target_namespace": "target",
             "decoder_net": {
-                "type": "lstm_cell",
+                "type": "dual_attention_lstm_cell",
                 "decoding_dim": 600,
                 "target_embedding_dim": 300,
                 "attention": {
+                    "type": "dot_product",
+                    "normalize": true
+                 },
+                 "attention1": {
                     "type": "bilinear",
+                    "vector_dim": 600,
                     "matrix_dim": 600,
-                    "normalize": true,
-                    "vector_dim": 600
-                },
+                    "normalize": true
+                 },
                 "bidirectional_input": false
             },
             "max_decoding_steps": 1000,
