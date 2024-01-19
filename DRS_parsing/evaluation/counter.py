@@ -685,26 +685,26 @@ class DRS:
 		# If second and third item are between quotes it belongs in roles_two_abs (b0 PartOf "speaker" "hearer")
 		if between_quotes(cur_clause[2]) and between_quotes(cur_clause[3]):
 			to_add = (val0, role, cur_clause[2], cur_clause[3]) if not args.reference_input_token else \
-				(val0, role, cur_clause[2], cur_clause[3], cur_clause[4], cur_clause[5], cur_clause[6])
+				(val0, role, cur_clause[2], cur_clause[3], cur_clause[5], cur_clause[6], cur_clause[7])
 			self.add_if_not_exists(self.roles_two_abs, self.roles_two_abs_idx, to_add, idx)
 		# If third item is between quotes it belongs in roles_abs1 (b0 PartOf "speaker" x2)
 		elif between_quotes(cur_clause[2]):
 			val2 = self.rename_var(cur_clause[3], 'x', args)
 			to_add = (val0, role, cur_clause[2], val2) if not args.reference_input_token else \
-				(val0, role, cur_clause[2], val2, cur_clause[4], cur_clause[5], cur_clause[6])
+				(val0, role, cur_clause[2], val2, cur_clause[5], cur_clause[6], cur_clause[7])
 			self.add_if_not_exists(self.roles_abs1, self.roles_abs_idx1, to_add, idx)
 		# If last item is between quotes it belongs in roles_abs2 (b0 PartOf x2 "speaker")
 		elif between_quotes(cur_clause[3]):
 			val2 = self.rename_var(cur_clause[2], 'x', args)
 			to_add = (val0, role, val2, cur_clause[3]) if not args.reference_input_token else \
-				(val0, role, val2, cur_clause[3], cur_clause[4], cur_clause[5], cur_clause[6])
+				(val0, role, val2, cur_clause[3], cur_clause[5], cur_clause[6], cur_clause[7])
 			self.add_if_not_exists(self.roles_abs2, self.roles_abs_idx2, to_add, idx)
 		# Otherwise it belongs in roles (b1 Patient x1 x2)
 		else:
 			val2 = self.rename_var(cur_clause[2], 'x', args)
 			val3 = self.rename_var(cur_clause[3], 'x', args)
 			to_add = (val0, role, val2, val3) if not args.reference_input_token else \
-				(val0, role, val2, val3, cur_clause[4], cur_clause[5], cur_clause[6])
+				(val0, role, val2, val3, cur_clause[5], cur_clause[6], cur_clause[7])
 			self.add_if_not_exists(self.roles, self.roles_idx, to_add, idx)
 
 
@@ -717,13 +717,13 @@ class DRS:
 		if between_quotes(cur_clause[2]):
 			val2 = self.rename_var(cur_clause[3], var_type, args) #get renamed variable
 			to_add = (val0, cur_clause[1], cur_clause[2], val2) if not args.reference_input_token else \
-					(val0, cur_clause[1], cur_clause[2], val2, cur_clause[4], cur_clause[5], cur_clause[6])
+					(val0, cur_clause[1], cur_clause[2], val2, cur_clause[5], cur_clause[6], cur_clause[7])
 			self.add_if_not_exists(self.op_two_vars_abs1, self.op_two_vars_abs_idx1, to_add, idx)
 		# If last item is between quotes it belongs in op_two_vars_abs2 (b2 EQU t1 "now")
 		elif between_quotes(cur_clause[3]):
 			val2 = self.rename_var(cur_clause[2], var_type, args) #get renamed variable
 			to_add = (val0, cur_clause[1], val2, cur_clause[3]) if not args.reference_input_token else \
-				(val0, cur_clause[1], val2, cur_clause[3], cur_clause[4], cur_clause[5], cur_clause[6])
+				(val0, cur_clause[1], val2, cur_clause[3], cur_clause[5], cur_clause[6], cur_clause[7])
 			self.add_if_not_exists(self.op_two_vars_abs2, self.op_two_vars_abs_idx2, to_add, idx)
 		# Else it belongs in op_three_vars (b1 LES x1 x2)
 		else:
@@ -731,7 +731,7 @@ class DRS:
 			var_type = 'b' if cur_clause[1] in self.op_boxes else 'x'
 			val3 = self.rename_var(cur_clause[3], var_type, args)
 			to_add = (val0, cur_clause[1], val2, val3) if not args.reference_input_token else \
-				(val0, cur_clause[1], val2, val3, cur_clause[4], cur_clause[5], cur_clause[6])
+				(val0, cur_clause[1], val2, val3, cur_clause[5], cur_clause[6], cur_clause[7])
 			self.add_if_not_exists(self.op_three_vars, self.op_three_vars_idx, to_add, idx)
 
 
@@ -754,12 +754,12 @@ class DRS:
 		for idx, cur_clause in enumerate(clause_list):
 			# Clause has three items and belongs in op_two_vars (b0 REF x1 ,  b0 NOT b1)
 
-			if len(cur_clause) == 3 or (args.reference_input_token and len(cur_clause) == 6):
+			if len(cur_clause) == 3 or (args.reference_input_token and len(cur_clause) == 7):
 				val0 = self.rename_var(cur_clause[0], 'b', args)
 				var_type = 'b' if cur_clause[1] in self.op_boxes else 'x'
 				val2 = self.rename_var(cur_clause[2], var_type, args)
 				if args.reference_input_token:
-					origin_token, charseq_start, charseq_end = cur_clause[3], cur_clause[4], cur_clause[5]
+					origin_token, charseq_start, charseq_end = cur_clause[4], cur_clause[5], cur_clause[6]
 					self.add_if_not_exists(self.op_two_vars, self.op_two_vars_idx, (val0, cur_clause[1], val2, origin_token, charseq_start, charseq_end), idx)
 				else:
 					self.add_if_not_exists(self.op_two_vars, self.op_two_vars_idx, (val0, cur_clause[1], val2), idx)

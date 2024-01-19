@@ -31,14 +31,14 @@ def average_fine_tuned(tune_dir, calc_from_output = False):
                     if (dev_present):
                         args_str = '-f1 {} -f2 {} -g {}'.format(dev_file, os.path.join(d2, "dev.txt"), d3)
                         if "tok" in args_str and "nontok" not in args_str:
-                            args_str = args_str + " -rt -et -ei"
+                            args_str = args_str + add_argstring
                         args = counter.build_arg_parser(args_str)
                         dev_f1 += counter.main(args, verbose=False)[2]
                         dev_num += 1
                     if (test_present):
                         args_str = '-f1 {} -f2 {} -g {}'.format(test_file, os.path.join(d2, "test.txt"), d3)
                         if "tok" in args_str and "nontok" not in args_str:
-                            args_str = args_str + " -rt -et -ei"
+                            args_str = args_str + add_argstring
                         args = counter.build_arg_parser(args_str)
                         test_f1 += counter.main(args, verbose=False)[2]
                         test_num += 1
@@ -66,6 +66,7 @@ if __name__ == '__main__':
     parser.add_argument('-e', "--number_epochs", default='3', type=str, help="the number of epochs the experiment ran for")
     parser.add_argument('-c', "--calcArgs", default='', type=str, help="additional arguments to pass to counter")
 
+    add_argstring = " -rt"
 
     args = parser.parse_args()
     exp_dir = args.directory
@@ -143,7 +144,7 @@ if __name__ == '__main__':
         if dev_present:
             args_str = '-f1 {} -f2 {} -g {}'.format(dev_file, os.path.join(d2, "dev.txt"), d3)
             if "tok" in args_str and "nontok" not in args_str:
-                args_str = args_str + " -rt -et -ei"
+                args_str = args_str + add_argstring
             args = counter.build_arg_parser(args_str)
             print("Non-fine-tuned, dev-set:")
             print(counter.main(args, verbose= False))
@@ -151,7 +152,7 @@ if __name__ == '__main__':
         if test_present:
             args_str = '-f1 {} -f2 {} -g {} -rt'.format(test_file, os.path.join(d2, "test.txt"), d3)
             if "tok" in args_str and "nontok" not in args_str:
-                args_str = args_str + " -rt -et -ei"
+                args_str = args_str + add_argstring
             args = counter.build_arg_parser(args_str)
             print("Non-fine-tuned, test-set:")
             print(counter.main(args, verbose= False))
