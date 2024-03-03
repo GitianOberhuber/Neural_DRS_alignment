@@ -592,7 +592,7 @@ def read_matching_nonmatching_clauses(match_file):
     return cur_list
 
 
-def read_allennlp_json_predictions(input_file, vocab, min_tokens):
+def read_allennlp_json_predictions(input_file, vocab, min_tokens, vocab_key = None):
     '''Read the json predictions of AllenNLP
        Bit tricky: if predictions for the winning beam are very short we take a later prediction and
        ignore the "winning" beam. Label smoothing can have this side effect that cuts the sequences
@@ -602,7 +602,9 @@ def read_allennlp_json_predictions(input_file, vocab, min_tokens):
     dict_lines = json_by_line(input_file)
     lines = []
     for i, dic in enumerate(dict_lines):
-        tokens = dic["predicted_tokens"]
+        if vocab_key is None:
+            vocab_key = "predicted_tokens"
+        tokens = dic[vocab_key]
         if len(tokens) >= min_tokens:
             lines.append(" ".join(tokens))
         # Not enough tokens in output, go down beam search and take first one that is long enough

@@ -63,6 +63,8 @@ def create_arg_parser():
                         help="Remove roles and operators that occur > X times (0 means no removal)")
     parser.add_argument("-rcl", "--remove_clauses", type=int, default=0,
                         help="Simply remove all clauses after this number (0 means no removal)")
+    parser.add_argument("-ea", "--evaluate_attention", action='store_true',
+                        help="Whether to evaluate the model output in 'predicted_tokens' or the alignment derived from the attention in 'attention_alignment'")
     args = parser.parse_args()
     # Validate the arguments
     if (args.remove_concepts == 0 or args.remove_roles_op == 0) \
@@ -106,7 +108,8 @@ class PostprocessValues:
                        and os.path.isfile(fix_senses) else None
         self.signature = get_signature(sig_file) if sig_file and os.path.isfile(args.sig_file) \
                          else None
-        self.lines = read_allennlp_json_predictions(input_file, vocab, min_tokens) \
+        vocab_key = 'attention_alignment' if args.evaluate_attention else 'predicted_tokens'
+        self.lines = read_allennlp_json_predictions(input_file, vocab, min_tokens, vocab_key = vocab_key) \
                      if do_json else [x.strip() for x in open(args.input_file, 'r')]
         self.rm_clauses = remove_clauses
         self.rm_roles_op = remove_roles_op
@@ -409,7 +412,16 @@ def restore_sep_plus(line):
 
 def remove_unknown(clause_list_init, pp_info):
     '''BERT experiment can have "@@UNKNOWN@@" in a clause (which is invalid), remove those here'''
-    clause_list = [clause for clause in clause_list_init if '@@UNKNOWN@@' not in clause]
+    clause_list = []
+    for clause in clause_list_init:
+        if '@@UNKNOWN@@' in clause:
+            unknown_occs = clause.count('@@UNKNOWN@@')
+            unknown_occs_in_alignment = clause.count('% @@UNKNOWN@@')
+            if unknown_occs_in_alignment == unknown_occs:
+                clause_list.append(clause)
+        else:
+            clause_list.append(clause)
+    #clause_list = [clause for clause in clause_list_init if '@@UNKNOWN@@' not in clause]
     if len(clause_list) < len(clause_list_init):
         pp_info.pp_dict["unknown"].append(pp_info.cur_idx)
     return clause_list
@@ -443,6 +455,21 @@ def restore_clauses(line, pp_info):
     clause_list = remove_unknown(line.split('***'), pp_info)
     clause_list = remove_after_idx(clause_list, pp_info)
     return clause_list
+
+def ensure_correct_alignment(drs):
+    result_drs = []
+    for clause in drs:
+        if '@end' in clause:
+            clause = clause.replace('@end@ ', '')
+        if clause.count('%') == 1:
+            result_drs.append(clause)
+        else:
+            if clause.count('%') == 0:
+                clause + " % UNK 0 0"
+            if clause.count('%') > 1:
+                clause_before_first_prc = clause.split('%', 1)[0]
+                result_drs.append(clause_before_first_prc + "% UNK 0 0")
+    return result_drs
 
 
 def remove_clauses_by_freq(drs, pp_info):
@@ -503,7 +530,7 @@ def remove_spurious_refs(clause_refs, disc_refs, drs, pp_info, do_print=False):
     return drs
 
 
-def check_ref_clauses(drs, pp_info, do_print=True):
+def check_ref_clauses(drs, pp_info, do_print=True, rt = False):
     '''Check if each discourse referent that is used has a REF clause'''
     refs = [x[2] for x in drs if x[1] == 'REF']  # all discourse referents introduced by REF
 
@@ -522,11 +549,15 @@ def check_ref_clauses(drs, pp_info, do_print=True):
     return drs
 
 
-def check_doubles(drs, pp_info):
+def check_doubles(drs, pp_info, rt = False):
     '''Check if there are double clauses, if so, remove them, but keep order'''
     new_drs = []
     for clause in drs:
-        if clause in new_drs:
+        if rt:
+            tmp_clause = clause[:-4]
+        else:
+            tmp_clause = clause
+        if tmp_clause in new_drs:
             # keep track of not adding double
             pp_info.pp_dict["double"].append(pp_info.cur_idx)
         else:
@@ -602,14 +633,14 @@ def fix_word_senses(drs, pp_info):
     return drs
 
 
-def easy_fixes(drs, pp_info):
+def easy_fixes(drs, pp_info, rt = False):
     '''Perform some easy output-fixing for trivial errors the model makes'''
     try:
         # Check if there are double clauses (not allowed, so remove them)
-        drs = check_doubles(drs, pp_info)
+        drs = check_doubles(drs, pp_info, rt)
         # Check if each discourse referent that is used also has a REF
         # So removing spurious REFs, or adding them if necessary
-        drs = check_ref_clauses(drs, pp_info)
+        drs = check_ref_clauses(drs, pp_info, rt)
     except:
         drs = default_drs(pp_info.baseline, list_output=False)
         pp_info.pp_dict["dummies-pp"].append(pp_info.cur_idx)
@@ -771,16 +802,17 @@ def do_postprocess(args):
         pp_info.cur_idx = idx
         # Restore clause format, we now have a list of clauses (list of strings)
         drs = restore_clauses(line, pp_info)
-
         # Then remove certain clauses (roles, operators, concepts) if they occur too often
         drs = remove_clauses_by_freq(drs, pp_info)
+
+        if args.reference_input_token:
+            drs = ensure_correct_alignment(drs)
 
         # Then restore the variables in the correct way
         drs = restore_variables(drs, pp_info, rt = args.reference_input_token)
 
         # Fix some easy-to-fix errors regarding REF clauses
-        drs = easy_fixes(drs, pp_info)
-
+        drs = easy_fixes(drs, pp_info, rt = args.reference_input_token)
         # If we want, we can try to automatically fix word senses
         if pp_info.senses:
             drs = fix_word_senses(drs, pp_info)
@@ -805,7 +837,22 @@ def do_postprocess(args):
 
         drss.append([" ".join(c) for c in drs])
 
-    # Write the postprocessed, valid output
+        # Write the postprocessed, valid output
+        if (args.reference_input_token):
+            for sublist in drss:
+                # Find the length of the longest string in the sublist
+                max_length = max(len(s) for s in sublist)
+
+                # Pad each string in the sublist
+                for i in range(len(sublist)):
+                    length_difference = max_length - len(sublist[i])
+                    # Find the position of '%' and insert spaces before it
+                    try:
+                        percent_index = sublist[i].index('%')
+                    except ValueError:
+                        pass
+                    sublist[i] = sublist[i][:percent_index] + ' ' * length_difference + sublist[i][percent_index:]
+
     write_list_of_lists(drss, args.output_file)
     # Print stats of postprocessing
     pp_info.print_stats()

@@ -77,7 +77,6 @@ from html_results import coda_html
 # Import utils
 from utils_counter import *
 
-
 def build_arg_parser(args = None):
 	parser = argparse.ArgumentParser(description="Counter calculator -- arguments")
 	# Main arguments
@@ -147,6 +146,8 @@ def build_arg_parser(args = None):
 	parser.add_argument("-ei", "--evaluate_indices", action='store_true',
 						help="When comparing DRS clauses, take references to original token start- and end-index into account and only consider a clause pair to be matching"
 							 "if their token indices also match")
+	parser.add_argument("-ti", "--evaluate_token_ignore_casing", action='store_true',
+						help="When -et is specified, do not take casing into account when evaluating alignment")
 
 	if args is not None:
 		args = args.split()
@@ -205,7 +206,7 @@ def remove_refs(clause_list, original_clauses, rt = False):
 	return final_clauses, final_original
 
 
-def get_clauses(file_name, signature, ill_type, rt = False):
+def get_clauses(file_name, signature, ill_type, rt = False, include_REF = False):
 	'''Function that returns a list of DRSs (that consists of clauses)'''
 	clause_list, original_clauses, cur_orig, cur_clauses = [], [], [], []
 
@@ -287,8 +288,8 @@ def get_clauses(file_name, signature, ill_type, rt = False):
 					clause[2], clause[3] = clause[3], clause[2]
 
 	# If we want to include REF clauses we are done now
-	#if args.include_ref:
-	#	return clause_list, original_clauses
+	if include_REF:
+		return clause_list, original_clauses
 	else: #else remove redundant REF clauses
 		final_clauses, final_original = remove_refs(clause_list, original_clauses, rt)
 		return final_clauses, final_original
@@ -299,10 +300,12 @@ def var_occurs(clauses, var, box, idx, rt = False):
 	for cur_idx in range(0, len(clauses)):
 		spl_tup = clauses[cur_idx]
 		if rt:
-			if len(spl_tup) == 6:
-				spl_tup = spl_tup[:3]
-			elif len(spl_tup) == 7:
-				spl_tup = spl_tup[:4]
+			if '%' in spl_tup:
+				tmp_spl_tup = [x for x in spl_tup if x != '%']
+			if len(tmp_spl_tup) == 6:
+				spl_tup = tmp_spl_tup[:3]
+			elif len(tmp_spl_tup) == 7:
+				spl_tup = tmp_spl_tup[:4]
 		if cur_idx != idx and spl_tup[0] == box and (var == spl_tup[-1] or var == spl_tup[-2]):
 			return True
 	return False
@@ -479,9 +482,16 @@ def get_matching_clauses(arg_list):
 		return [0, prod_drs.total_clauses, gold_drs.total_clauses, [], 0, 0, 0, len(prod_drs.var_map)]  # only care about clauses and var count, skip calculations
 	else:
 		# Do the hill-climbing for the matching here
-		(best_mapping, best_match_num, found_idx, smart_fscores, clause_pairs) = get_best_match(prod_drs, gold_drs, args, single)
+		(best_mapping, best_match_num, found_idx, smart_fscores, clause_pairs, alignment) = get_best_match(prod_drs, gold_drs, args, single)
 		(precision, recall, best_f_score) = compute_f(best_match_num, prod_drs.total_clauses, gold_drs.total_clauses, args.significant, False)
 
+		clause_pairs_correct_alignment, best_match_num_correct_alignment, clause_pairs_correct_alignment_idxs, best_match_num_correct_alignment_idxs = 0,0,0,0
+		if (args.reference_input_token and args.evaluate_token):
+			clause_pairs_correct_alignment = filter_matching_clauspairs_by_alignment(clause_pairs, alignment, ignore_casing = args.evaluate_token_ignore_casing, match_tokenIdxs = False)
+			best_match_num_correct_alignment = len(clause_pairs_correct_alignment)
+		if args.reference_input_token and args.evaluate_indices:
+			clause_pairs_correct_alignment_idxs = filter_matching_clauspairs_by_alignment(clause_pairs, alignment, ignore_casing=args.evaluate_token_ignore_casing, match_tokenIdxs=True)
+			best_match_num_correct_alignment_idxs = len(clause_pairs_correct_alignment_idxs)
 
 		if not args.no_mapping:
 			# Print clause mapping if -prin is used and we either do multiple scores, or just had a single DRS
@@ -507,7 +517,28 @@ def get_matching_clauses(arg_list):
 		if args.ms and not single:
 			print_results([[best_match_num, prod_drs.total_clauses, gold_drs.total_clauses, smart_fscores, found_idx, match_division, prod_clause_division, gold_clause_division, len(prod_drs.var_map), idv_dict]],
 				False, start_time, single, args)
-		return [best_match_num, prod_drs.total_clauses, gold_drs.total_clauses, smart_fscores, found_idx, match_division, prod_clause_division, gold_clause_division, len(prod_drs.var_map), idv_dict]
+		return [best_match_num, prod_drs.total_clauses, gold_drs.total_clauses, smart_fscores, found_idx, match_division, prod_clause_division, gold_clause_division, len(prod_drs.var_map), idv_dict, best_match_num_correct_alignment, best_match_num_correct_alignment_idxs]
+
+def filter_matching_clauspairs_by_alignment(clause_pairs, alignment, ignore_casing = False, match_tokenIdxs = True):
+	if set(clause_pairs.keys()) != set(alignment.keys()):
+		raise ValueError("Alignment and clause-pair dictionaries have different key-sets!")
+
+	res = {}
+	for keypair in clause_pairs.keys():
+		match = True
+		alignment_prod, alignment_gold = alignment[keypair]
+		if '~' in alignment_gold[0]:
+			tokenMatch = alignment_prod[0].lower() in alignment_gold[0].lower() if ignore_casing else alignment_prod[0] in alignment_gold[0]
+		else:
+			tokenMatch = alignment_prod[0].lower() == alignment_gold[0].lower() if ignore_casing else alignment_prod[0] == alignment_gold[0]
+		if match_tokenIdxs:
+			match = tokenMatch and alignment_prod[1] == alignment_gold[1] and alignment_prod[2] == alignment_gold[2]
+		else:
+			match = tokenMatch
+
+		if match:
+			res[keypair] = clause_pairs[keypair]
+	return res
 
 
 def print_results(res_list, no_print, start_time, single, args, verbose = True):
@@ -515,6 +546,13 @@ def print_results(res_list, no_print, start_time, single, args, verbose = True):
 
 	# Calculate average scores
 	total_match_num = sum([x[0] for x in res_list if x])
+	total_match_num_correct_alignment = sum([x[10] for x in res_list if x])
+	total_match_num_correct_alignment_idx = sum([x[11] for x in res_list if x])
+	count_fully_correct_drs = sum(1 for x in res_list if x[0] == x[1] == x[2])
+	indices_fully_correct_drs = [index for index, x in enumerate(res_list) if x[0] == x[1] == x[2]]
+	total_match_num_correct_drs = sum(x[0] for x in res_list if x[0] == x[1] == x[2])
+	total_match_num_correct_drs_correct_alignment = sum(x[10] for x in res_list if x[0] == x[1] == x[2])
+	total_match_num_correct_drs_correct_alignment_idx = sum(x[11] for x in res_list if x[0] == x[1] == x[2])
 	total_test_num = sum([x[1] for x in res_list if x])
 	total_gold_num = sum([x[2] for x in res_list if x])
 	found_idx = round(float(sum([x[4] for x in res_list if x])) / float(len([x[4] for x in res_list if x])), args.significant)
@@ -532,6 +570,17 @@ def print_results(res_list, no_print, start_time, single, args, verbose = True):
 	# Output document-level score (a single f-score for all DRS pairs in two files)
 	(precision, recall, best_f_score) = compute_f(total_match_num, total_test_num, total_gold_num, args.significant, False)
 
+	alignment_accuracy, alignment_accuracy_fully_correct, alignment_accuracy_idx, alignment_accuracy_fully_correct_idx = 0,0,0,0
+	precision_align, recall_align, best_f_score_align, precision_align_idx, recall_align_idx, best_f_score_align_idx = 0,0,0,0,0,0
+	if (args.reference_input_token and args.evaluate_token):
+		(precision_align, recall_align, best_f_score_align) = compute_f(total_match_num_correct_alignment, total_test_num, total_gold_num, args.significant, False)
+		(precision_align_idx, recall_align_idx, best_f_score_align_idx) = compute_f(total_match_num_correct_alignment_idx, total_test_num, total_gold_num, args.significant, False)
+
+		alignment_accuracy = total_match_num_correct_alignment / total_match_num
+		alignment_accuracy_fully_correct = total_match_num_correct_drs_correct_alignment / total_match_num_correct_drs
+		alignment_accuracy_idx = total_match_num_correct_alignment_idx / total_match_num
+		alignment_accuracy_fully_correct_idx = total_match_num_correct_drs_correct_alignment_idx / total_match_num_correct_drs
+
 	if not res_list:
 		return []  # no results for some reason
 	elif no_print:  # averaging over multiple runs, don't print results
@@ -546,10 +595,18 @@ def print_results(res_list, no_print, start_time, single, args, verbose = True):
 			print('## Main Results ##\n')
 			if not single:
 				print('All shown number are micro-averages calculated over {0} DRS-pairs\n'.format(len(res_list)))
-			print('Matching clauses: {0}\n'.format(total_match_num))
+			print('Matching clauses: {0}'.format(total_match_num))
+			print('Fully correct DRS: {0} ({1} out of {2})\n'.format(round(count_fully_correct_drs / len(res_list), 2), count_fully_correct_drs, len(res_list)))
 			print("Precision: {0}".format(round(precision, args.significant)))
 			print("Recall   : {0}".format(round(recall, args.significant)))
 			print("F-score  : {0}".format(round(best_f_score, args.significant)))
+			if (args.reference_input_token and args.evaluate_token):
+				print("-------- Alignment ---------")
+				print("Alignment Accuracy (without indices): {0}".format(round(alignment_accuracy, args.significant)))
+				print("Alignment Accuracy for fully correct DRS (without indices): {0}".format(round(alignment_accuracy_fully_correct, args.significant)))
+				print("Alignment Accuracy (with indices): {0}".format(round(alignment_accuracy_idx, args.significant)))
+				print("Alignment Accuracy for fully correct DRS (with indices): {0}".format(round(alignment_accuracy_fully_correct_idx, args.significant)))
+				print("F-score  : {0}".format(round(best_f_score_align, args.significant)))
 
 		# Print specific output here
 		if args.prin:
@@ -577,7 +634,7 @@ def print_results(res_list, no_print, start_time, single, args, verbose = True):
 
 	if verbose:
 		print('Total processing time: {0} sec'.format(runtime))
-	return [precision, recall, best_f_score]
+	return [best_f_score, best_f_score_align, best_f_score_align_idx, alignment_accuracy, alignment_accuracy_fully_correct, alignment_accuracy_idx, alignment_accuracy_fully_correct_idx]
 
 
 def check_input(clauses_prod_list, original_prod, original_gold, clauses_gold_list, baseline, f1, max_clauses, single, verbose = False):
@@ -832,9 +889,9 @@ def main(args, verbose = True):
 	res = []
 
 	# Get all the clauses and check if they are valid
-	clauses_prod_list, original_prod = get_clauses(args.f1, signature, args.ill, args.reference_input_token)
+	clauses_prod_list, original_prod = get_clauses(args.f1, signature, args.ill, args.reference_input_token, args.include_ref)
 
-	clauses_gold_list, original_gold = get_clauses(args.f2, signature, args.ill, args.reference_input_token)
+	clauses_gold_list, original_gold = get_clauses(args.f2, signature, args.ill, args.reference_input_token, args.include_ref)
 
 
 
@@ -908,7 +965,14 @@ def main(args, verbose = True):
 	# We might want to output statistics about individual types of clauses
 	if args.detailed_stats > 0:
 		save_detailed_stats([x[9] for x in all_results], args)
-	return round(float(sum([x[0] for x in res])) / float(args.runs), args.significant), round(float(sum([x[1] for x in res])) / float(args.runs), args.significant), round(float(sum([x[2] for x in res])) / float(args.runs), args.significant)
+
+	#return [best_f_score, best_f_score_align, best_f_score_align_idx, alignment_accuracy,
+#				alignment_accuracy_fully_correct, alignment_accuracy_idx, alignment_accuracy_fully_correct_idx]
+
+	return (round(float(sum([x[0] for x in res])) / float(args.runs), args.significant), round(float(sum([x[1] for x in res])) / float(args.runs), args.significant),
+			round(float(sum([x[2] for x in res])) / float(args.runs), args.significant), round(float(sum([x[3] for x in res])) / float(args.runs), args.significant),
+			round(float(sum([x[4] for x in res])) / float(args.runs), args.significant), round(float(sum([x[5] for x in res])) / float(args.runs), args.significant),
+			round(float(sum([x[6] for x in res])) / float(args.runs), args.significant))
 
 ERROR_LOG = sys.stderr
 DEBUG_LOG = sys.stderr

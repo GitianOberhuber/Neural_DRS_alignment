@@ -13,11 +13,34 @@ def read_f1_from_file(filepath):
 
     return None
 
+def fancyPrint(res_list):
+    if not res_list is None and not len(res_list) == 0:
+        print("F-score, DRS only : {0}".format(round(res_list[0], 4)))
+        print("F-score, alignment : {0}".format(round(res_list[1], 4)))
+        print("F-score, alignment + indices : {0}".format(round(res_list[2], 4)))
+        print("-------- Alignment ---------")
+        print("Alignment Accuracy (without indices): {0}".format(round(res_list[3], 3)))
+        print("Alignment Accuracy for fully correct DRS (without indices): {0}".format(round(res_list[4], 3)))
+        print("Alignment Accuracy (with indices): {0}".format(round(res_list[5], 3)))
+        print("Alignment Accuracy for fully correct DRS (with indices): {0}".format(round(res_list[6], 3)))
+
+def sum_lists_elementwise(lists, num_runs):
+    # Ensure all lists have the same length
+    if not all(len(lst) == len(lists[0]) for lst in lists[1:]):
+        raise ValueError("All lists must have the same length for element-wise addition")
+
+    # Use zip to iterate over elements at the same index and sum them up
+    result_sum = [sum(nums)/num_runs for nums in zip(*lists)]
+
+    return result_sum
+
 def average_fine_tuned(tune_dir, calc_from_output = False):
     test_f1 = 0
     dev_f1 = 0
     dev_num = 0
     test_num = 0
+    dev_results = []
+    test_results = []
     for run in os.listdir(tune_dir):
         run_path = os.path.join(tune_dir, run)
         if os.path.isdir(run_path):
@@ -33,14 +56,16 @@ def average_fine_tuned(tune_dir, calc_from_output = False):
                         if "tok" in args_str and "nontok" not in args_str:
                             args_str = args_str + add_argstring
                         args = counter.build_arg_parser(args_str)
-                        dev_f1 += counter.main(args, verbose=False)[2]
+                        #dev_f1 += counter.main(args, verbose=False)[2]
+                        dev_results.append(counter.main(args, verbose=False))
                         dev_num += 1
                     if (test_present):
                         args_str = '-f1 {} -f2 {} -g {}'.format(test_file, os.path.join(d2, "test.txt"), d3)
                         if "tok" in args_str and "nontok" not in args_str:
                             args_str = args_str + add_argstring
                         args = counter.build_arg_parser(args_str)
-                        test_f1 += counter.main(args, verbose=False)[2]
+                        #test_f1 += counter.main(args, verbose=False)[2]
+                        test_results.append(counter.main(args, verbose=False))
                         test_num += 1
             else:
                 eval_path = os.path.join(run_path, "eval")
@@ -55,7 +80,9 @@ def average_fine_tuned(tune_dir, calc_from_output = False):
                     if (test_present):
                         test_f1 += float(re.sub(r'F-score\s*:\s*', '', read_f1_from_file(test_file)))
                         test_num +=1
-    return dev_f1/dev_num, test_f1/test_num
+    print(dev_results)
+    print(test_results)
+    return sum_lists_elementwise(dev_results, dev_num), sum_lists_elementwise(test_results, test_num)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -66,7 +93,7 @@ if __name__ == '__main__':
     parser.add_argument('-e', "--number_epochs", default='3', type=str, help="the number of epochs the experiment ran for")
     parser.add_argument('-c', "--calcArgs", default='', type=str, help="additional arguments to pass to counter")
 
-    add_argstring = " -rt"
+    add_argstring = " -rt -et -ei -ti -ic "
 
     args = parser.parse_args()
     exp_dir = args.directory
@@ -141,25 +168,11 @@ if __name__ == '__main__':
         finetuned_dir = os.path.join(d1, "fine-tuned")
         fine_tuned_present = os.path.exists(finetuned_dir) and os.path.isdir(finetuned_dir)
 
-        if dev_present:
-            args_str = '-f1 {} -f2 {} -g {}'.format(dev_file, os.path.join(d2, "dev.txt"), d3)
-            if "tok" in args_str and "nontok" not in args_str:
-                args_str = args_str + add_argstring
-            args = counter.build_arg_parser(args_str)
-            print("Non-fine-tuned, dev-set:")
-            print(counter.main(args, verbose= False))
-
-        if test_present:
-            args_str = '-f1 {} -f2 {} -g {} -rt'.format(test_file, os.path.join(d2, "test.txt"), d3)
-            if "tok" in args_str and "nontok" not in args_str:
-                args_str = args_str + add_argstring
-            args = counter.build_arg_parser(args_str)
-            print("Non-fine-tuned, test-set:")
-            print(counter.main(args, verbose= False))
-
         if fine_tuned_present:
             finetune_dev, finetune_test = average_fine_tuned(finetuned_dir, calc_from_output = True)
-            print("Fine-tuned, averaged, dev-set:")
-            print(round(finetune_dev, 3))
-            print("Fine-tuned, averaged, test-set:")
-            print(round(finetune_test, 3))
+            print("Dev-Set:")
+            fancyPrint(finetune_dev)
+            print("\n")
+            print("Test-Set")
+            fancyPrint(finetune_test)
+

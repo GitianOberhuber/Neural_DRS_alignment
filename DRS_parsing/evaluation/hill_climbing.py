@@ -11,6 +11,7 @@ class DRS_match:
 		self.clause_dict_prod = {}
 		#Save all combinations of variables that match, so we can print matching clauses later
 		self.clause_pairs = {}
+		self.alignment_pairs = {}
 		self.match_num = 0
 		self.mapping = [] #initialized empty but always set to the current mapping
 		self.weight_dict = {} #initialized empty but always set to the current weight_dict
@@ -123,13 +124,13 @@ def get_best_match(prod_drs, gold_drs, args, single):
 		if i < len(smart_fscores):  # are we still adding smart F-scores?
 			smart_fscores[i] = match_num
 
-	_, clause_pairs = compute_match(best_mapping, weight_dict, {}, final=True)
+	_, clause_pairs, alignment = compute_match(best_mapping, weight_dict, {}, final=True)
 
 	# Clear matches out of memory
 	match_clause_dict.clear()
 	if len(set([x for x in best_mapping if x != -1])) != len([x for x in best_mapping if x != -1]):
 		raise ValueError("Variable maps to two other variables, not allowed, and should never happen -- {0}".format(best_mapping))
-	return best_mapping, best_match_num, found_idx, smart_fscores, clause_pairs,
+	return best_mapping, best_match_num, found_idx, smart_fscores, clause_pairs, alignment
 
 
 def add_random_mapping(result, matched_dict, candidate_mapping):
@@ -216,20 +217,20 @@ def normalize(item):
 	return item
 
 
-def add_node_pairs(node_pair1, node_pair2, node_pair3, weight_dict, weight_score, no_match, gold_clause_idx, prod_clause_idx):
+def add_node_pairs(node_pair1, node_pair2, node_pair3, weight_dict, weight_score, no_match, gold_clause_idx, prod_clause_idx, align_prod, align_gold):
 	'''Add possible node pairs to weight dict for node pair1'''
 
 	if len([node_pair1, node_pair2, node_pair3]) == len(set([node_pair1, node_pair2, node_pair3])):  # node pairs cant be duplicates
 		if node_pair1 in weight_dict:
 			if (node_pair2, node_pair3) in weight_dict[node_pair1]:
-				weight_dict[node_pair1][(node_pair2, node_pair3)].append([weight_score, no_match, gold_clause_idx, prod_clause_idx])
+				weight_dict[node_pair1][(node_pair2, node_pair3)].append([weight_score, no_match, gold_clause_idx, prod_clause_idx, align_prod, align_gold])
 			elif (node_pair3, node_pair2) in weight_dict[node_pair1]:
-				weight_dict[node_pair1][(node_pair3, node_pair2)].append([weight_score, no_match, gold_clause_idx, prod_clause_idx])
+				weight_dict[node_pair1][(node_pair3, node_pair2)].append([weight_score, no_match, gold_clause_idx, prod_clause_idx, align_prod, align_gold])
 			else:
-				weight_dict[node_pair1][(node_pair2, node_pair3)] = [[weight_score, no_match, gold_clause_idx, prod_clause_idx]]
+				weight_dict[node_pair1][(node_pair2, node_pair3)] = [[weight_score, no_match, gold_clause_idx, prod_clause_idx, align_prod, align_gold]]
 		else:
 			weight_dict[node_pair1] = {}
-			weight_dict[node_pair1][(node_pair2, node_pair3)] = [[weight_score, no_match, gold_clause_idx, prod_clause_idx]]
+			weight_dict[node_pair1][(node_pair2, node_pair3)] = [[weight_score, no_match, gold_clause_idx, prod_clause_idx, align_prod, align_gold]]
 	return weight_dict
 
 
@@ -272,10 +273,15 @@ def add_candidate_mapping_three_vars(prod_clauses, gold_clauses, prod_drs, gold_
 			no_match = ''  # empty no_match for normal matching
 			weight_score = 1
 
+			if args.reference_input_token:
+				align_prod, align_gold = get_alignment(prod_clauses[i], gold_clauses[j])
+			else:
+				align_prod, align_gold = None, None
+
 			# add to weight dict here, only do for 1,2 - 1,3 and 2,3
-			weight_dict = add_node_pairs(node_pair1, node_pair2, node_pair3, weight_dict, weight_score, no_match, j + add_to_index, i + add_to_index2)
-			weight_dict = add_node_pairs(node_pair2, node_pair1, node_pair3, weight_dict, weight_score, no_match, j + add_to_index, i + add_to_index2)
-			weight_dict = add_node_pairs(node_pair3, node_pair1, node_pair2, weight_dict, weight_score, no_match, j + add_to_index, i + add_to_index2)
+			weight_dict = add_node_pairs(node_pair1, node_pair2, node_pair3, weight_dict, weight_score, no_match, j + add_to_index, i + add_to_index2, align_prod, align_gold)
+			weight_dict = add_node_pairs(node_pair2, node_pair1, node_pair3, weight_dict, weight_score, no_match, j + add_to_index, i + add_to_index2, align_prod, align_gold)
+			weight_dict = add_node_pairs(node_pair3, node_pair1, node_pair2, weight_dict, weight_score, no_match, j + add_to_index, i + add_to_index2, align_prod, align_gold)
 			
 			# If the edge is part of inv_boxes, it means that e.g. b1 INV_BOX x1 x2 == b1 INV_BOX x2 x1
 			# We want to add this information to the matching dictionary as well here
@@ -289,9 +295,9 @@ def add_candidate_mapping_three_vars(prod_clauses, gold_clauses, prod_drs, gold_
 				candidate_mapping[node2_index_drs1].add(node3_index_drs2)
 				candidate_mapping[node3_index_drs1].add(node2_index_drs2)
 				# Update the weight dictionary
-				weight_dict = add_node_pairs(node_pair_new1, node_pair_new2, node_pair_new3, weight_dict, weight_score, no_match, j + add_to_index, i + add_to_index2)
-				weight_dict = add_node_pairs(node_pair_new2, node_pair_new1, node_pair_new3, weight_dict, weight_score, no_match, j + add_to_index, i + add_to_index2)
-				weight_dict = add_node_pairs(node_pair_new3, node_pair_new1, node_pair_new2, weight_dict, weight_score, no_match, j + add_to_index, i + add_to_index2)
+				weight_dict = add_node_pairs(node_pair_new1, node_pair_new2, node_pair_new3, weight_dict, weight_score, no_match, j + add_to_index, i + add_to_index2, align_prod, align_gold)
+				weight_dict = add_node_pairs(node_pair_new2, node_pair_new1, node_pair_new3, weight_dict, weight_score, no_match, j + add_to_index, i + add_to_index2, align_prod, align_gold)
+				weight_dict = add_node_pairs(node_pair_new3, node_pair_new1, node_pair_new2, weight_dict, weight_score, no_match, j + add_to_index, i + add_to_index2, align_prod, align_gold)
 			
 	else:
 		# Do partial matching
@@ -361,7 +367,8 @@ def add_candidate_mapping_three_vars(prod_clauses, gold_clauses, prod_drs, gold_
 	return candidate_mapping, weight_dict
 
 
-def add_candidate_mapping(candidate_mapping, weight_dict, weight_score, node1_index_drs1, node1_index_drs2, node2_index_drs1, node2_index_drs2, no_match, gold_clause_idx, prod_clause_idx, args):
+def add_candidate_mapping(candidate_mapping, weight_dict, weight_score, node1_index_drs1, node1_index_drs2, node2_index_drs1, node2_index_drs2, align_prod, align_gold,
+						  no_match, gold_clause_idx, prod_clause_idx, args):
 	'''Add the candidate mapping for this node pair to the weight dict - for two variables'''
 
 	# add mapping between two nodes
@@ -375,25 +382,25 @@ def add_candidate_mapping(candidate_mapping, weight_dict, weight_score, node1_in
 	if node_pair1 in weight_dict:
 		if node_pair2 in weight_dict[node_pair1]:
 			weight_dict[node_pair1][node_pair2].append(
-				[weight_score, no_match, gold_clause_idx, prod_clause_idx])
+				[weight_score, no_match, gold_clause_idx, prod_clause_idx, align_prod, align_gold])
 		else:
 			weight_dict[node_pair1][node_pair2] = [
-				[weight_score, no_match, gold_clause_idx, prod_clause_idx]]
+				[weight_score, no_match, gold_clause_idx, prod_clause_idx, align_prod, align_gold]]
 	else:
 		weight_dict[node_pair1] = {}
 		weight_dict[node_pair1][node_pair2] = [
-			[weight_score, no_match, gold_clause_idx, prod_clause_idx]]
+			[weight_score, no_match, gold_clause_idx, prod_clause_idx, align_prod, align_gold]]
 	if node_pair2 in weight_dict:
 		if node_pair1 in weight_dict[node_pair2]:
 			weight_dict[node_pair2][node_pair1].append(
-				[weight_score, no_match, gold_clause_idx, prod_clause_idx])
+				[weight_score, no_match, gold_clause_idx, prod_clause_idx, align_prod, align_gold])
 		else:
 			weight_dict[node_pair2][node_pair1] = [
-				[weight_score, no_match, gold_clause_idx, prod_clause_idx]]
+				[weight_score, no_match, gold_clause_idx, prod_clause_idx, align_prod, align_gold]]
 	else:
 		weight_dict[node_pair2] = {}
 		weight_dict[node_pair2][node_pair1] = [
-				[weight_score, no_match, gold_clause_idx, prod_clause_idx]]
+				[weight_score, no_match, gold_clause_idx, prod_clause_idx, align_prod, align_gold]]
 	return candidate_mapping, weight_dict
 
 
@@ -433,7 +440,7 @@ def add_single_var_mapping(node1_index, node2_index, candidate_mapping, weight_d
 
 	return candidate_mapping, weight_dict
 
-def tokenRef_match(clause_prod, clause_gold, match_tokenIdxs = True):
+def tokenRef_match(clause_prod, clause_gold, match_token_idxs = True, match_token_casing = True):
 	'''
 	Checks if the token references of two clauses are exactly equal (same start- and end-index as well as token)
 	'''
@@ -446,12 +453,30 @@ def tokenRef_match(clause_prod, clause_gold, match_tokenIdxs = True):
 
 	origin_token_p, charseq_start_p, charseq_end_p = clause_prod[origin_token_idx], clause_prod[charseq_start_idx], clause_prod[charseq_end_idx]
 	origin_token_g, charseq_start_g, charseq_end_g = clause_gold[origin_token_idx], clause_gold[charseq_start_idx], clause_gold[charseq_end_idx]
-
+	if not match_token_casing:
+		origin_token_g, origin_token_p = origin_token_g.lower(), origin_token_p.lower()
 	if origin_token_g == origin_token_p:
-		if not match_tokenIdxs or (charseq_start_g == charseq_start_p and charseq_end_g == charseq_end_p):
+		if not match_token_idxs or (charseq_start_g == charseq_start_p and charseq_end_g == charseq_end_p):
 			return True
+		else:
+			return False
 	else:
 		return False
+
+def get_alignment(clause_prod, clause_gold):
+	'''
+	Checks if the token references of two clauses are exactly equal (same start- and end-index as well as token)
+	'''
+	if len(clause_gold) != len(clause_prod):
+		return False
+	if len(clause_gold) == 6: #clause of size 6 (3 + 3 elements for the token references)
+		origin_token_idx, charseq_start_idx, charseq_end_idx = 3, 4, 5
+	else: #clause of size 7 (4 + 3 elements for the token references)
+		origin_token_idx, charseq_start_idx, charseq_end_idx = 4, 5, 6
+
+	origin_token_p, charseq_start_p, charseq_end_p = clause_prod[origin_token_idx], clause_prod[charseq_start_idx], clause_prod[charseq_end_idx]
+	origin_token_g, charseq_start_g, charseq_end_g = clause_gold[origin_token_idx], clause_gold[charseq_start_idx], clause_gold[charseq_end_idx]
+	return ((origin_token_p, charseq_start_p, charseq_end_p) , (origin_token_g, charseq_start_g, charseq_end_g))
 
 def map_two_vars_edges(clauses_prod, clauses_gold, prod_drs, gold_drs, edge_numbers, candidate_mapping, weight_dict, var_index1, var_index2, add_to_index, add_to_index2, args):
 	'''Function that updates weight_dict and candidate mappings for clauses with 2 variable and 1 or 2 edges
@@ -489,19 +514,24 @@ def map_two_vars_edges(clauses_prod, clauses_gold, prod_drs, gold_drs, edge_numb
 				else:
 					allowed_edge = True
 				# We do not do partial matching, normal case -- everything should match
-				if args.reference_input_token:
-					if args.evaluate_token:
-						tokenmatch = tokenRef_match(clauses_prod[i], clauses_gold[j], match_tokenIdxs = args.evaluate_indices)
-					else:
-						tokenmatch = True
-				else:
-					tokenmatch = True
-				if (allowed_var1 and allowed_var2 and allowed_edge and tokenmatch and
+				#if args.reference_input_token:
+			#		if args.evaluate_token:
+			#			tokenmatch = tokenRef_match(clauses_prod[i], clauses_gold[j], match_token_idxs= args.evaluate_indices, match_token_casing = not args.evaluate_token_ignore_casing)
+			#		else:
+			#			tokenmatch = True
+			#	else:
+			#		tokenmatch = True
+				if (allowed_var1 and allowed_var2 and allowed_edge and #tokenmatch and
 						normalize(clauses_prod[i][edge_numbers[0]]) == normalize(clauses_gold[j][edge_numbers[0]])):
 					weight_score = 1    # clause matches for 1
 					no_match = ''       # since we do not partial matching no_match is empty
+					if args.reference_input_token:
+						align_prod, align_gold = get_alignment(clauses_prod[i], clauses_gold[j])
+					else:
+						align_prod, align_gold = None, None
 					candidate_mapping, weight_dict = add_candidate_mapping(candidate_mapping, weight_dict, weight_score, node1_index_drs1, node1_index_drs2,
-																			node2_index_drs1, node2_index_drs2, no_match, j + add_to_index, i + add_to_index2, args)
+																			node2_index_drs1, node2_index_drs2, align_prod, align_gold,
+																		    no_match, j + add_to_index, i + add_to_index2, args)
 			else:
 				# Do partial matching
 				# Check if edge is of the same type (e.g. both concepts, both roles, both operators)
@@ -560,6 +590,10 @@ def add_mapping_role_two_abs(prod_drs, gold_drs, weight_dict, candidate_mapping,
 					# use a minus count as key in weight_dict for roles_two_abs
 					if node_pair not in weight_dict:
 						weight_dict[node_pair] = {}
+					if args.reference_input_token:
+						align_prod, align_gold = None, None#get_alignment(prod_clauses[i], gold_clauses[j])
+					else:
+						align_prod, align_gold = None, None
 					weight_dict[node_pair][minus_count] = [[1, '', add_to_index_gold + j, add_to_index_prod + i]]
 					minus_count -= 1
 			# Do partial matching here
@@ -776,7 +810,7 @@ def compute_match(mapping, weight_dict, match_clause_dict, final=False):
 	# update match_clause_dict
 	match_clause_dict[tuple(mapping)] = drs_match.match_num
 	if final:
-		return drs_match.match_num, drs_match.clause_pairs
+		return drs_match.match_num, drs_match.clause_pairs, drs_match.alignment_pairs
 	else:
 		return drs_match.match_num, match_clause_dict
 
@@ -784,7 +818,7 @@ def compute_match(mapping, weight_dict, match_clause_dict, final=False):
 def check_dict_for_adding(drs_match, item):
 	'''Only add value to our score if it is a better match for this clause
 	   Each gold clause can only (partially) match once'''
-
+	alignment = (item[4], item[5])
 	if item[2] in drs_match.clause_dict_gold and item[3] in drs_match.clause_dict_prod:
 		#we already have a match for this gold clause AND produced clause, only add if this is a better match in total (and substract previous score)
 		total_gain = (item[0] - drs_match.clause_dict_gold[item[2]]) + (item[0] - drs_match.clause_dict_prod[item[3]])
@@ -793,6 +827,7 @@ def check_dict_for_adding(drs_match, item):
 			drs_match.clause_dict_prod[item[3]] = item[0]
 			## Remove and add the items from our clause pairs so that we can easily find the matching parts later
 			drs_match.clause_pairs[item[2], item[3]] = 1
+			drs_match.alignment_pairs[item[2], item[3]] = alignment
 			drs_match.match_num += (float(total_gain) / 2) #divide by 2 otherwise we add double
 		else: #not an improvement, do nothing
 			pass
@@ -809,7 +844,7 @@ def check_dict_for_adding(drs_match, item):
 			for t in to_delete:
 				del drs_match.clause_pairs[t]
 
-
+			drs_match.alignment_pairs[item[2], item[3]] = alignment
 			drs_match.clause_pairs[item[2], item[3]] = 1
 		else:
 			#this gold clause has already matched and this match is not an improvement, so we do nothing
@@ -829,6 +864,7 @@ def check_dict_for_adding(drs_match, item):
 			for t in to_delete:
 				del drs_match.clause_pairs[t]
 			#clause_pairs[clause_dict_gold[item[2]],clause_dict_prod[item[3]]] = 1
+			drs_match.alignment_pairs[item[2], item[3]] = alignment
 			drs_match.clause_pairs[item[2], item[3]] = 1
 		else:
 			pass
@@ -837,6 +873,7 @@ def check_dict_for_adding(drs_match, item):
 		drs_match.match_num += item[0]
 		drs_match.clause_dict_gold[item[2]] = item[0]
 		drs_match.clause_dict_prod[item[3]] = item[0]
+		drs_match.alignment_pairs[item[2], item[3]] = alignment
 		drs_match.clause_pairs[item[2], item[3]] = 1
 	return drs_match
 
