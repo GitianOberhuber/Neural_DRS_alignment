@@ -237,7 +237,7 @@ class RestoreVariables:
         return second_var
 
     def rewrite_length_two_three_rt(self, cur_clause):
-        '''Rewrite clauses of length two or three'''
+        '''Rewrite clauses of length two or three + alignment'''
         first_var = self.get_variable(cur_clause[0], True)
         if len(cur_clause) == 6:
             alignSep, origin_token, charseq_start, charseq_end = cur_clause[2], cur_clause[3], cur_clause[4], cur_clause[5]
@@ -321,9 +321,9 @@ class RestoreVariables:
             try:
                 cur_clause = clause_string.split()
                 if rt:
-                    if len(cur_clause) in [6, 7]:  # Clause has 2 or 3 items + tokenref and beginning and end-idx
+                    if len(cur_clause) in [6, 7]:  # Clause has 2 or 3 items + alignment
                         self.rewrite_length_two_three_rt(cur_clause)
-                    elif len(cur_clause) == 8:  # Clause has 4 items + tokenref and beginning and end-idx
+                    elif len(cur_clause) == 8:  # Clause has 4 items + alignment
                         self.rewrite_length_four_rt(cur_clause)
                     else:
                         self.pp_info.pp_dict["wrong arity"].append(self.pp_info.cur_idx)
@@ -415,6 +415,7 @@ def remove_unknown(clause_list_init, pp_info):
     clause_list = []
     for clause in clause_list_init:
         if '@@UNKNOWN@@' in clause:
+            #keep the @@UNKNOWN@@ if it is the alignment for better comparison to pure DRS-parsing task
             unknown_occs = clause.count('@@UNKNOWN@@')
             unknown_occs_in_alignment = clause.count('% @@UNKNOWN@@')
             if unknown_occs_in_alignment == unknown_occs:
@@ -456,7 +457,8 @@ def restore_clauses(line, pp_info):
     clause_list = remove_after_idx(clause_list, pp_info)
     return clause_list
 
-def ensure_correct_alignment(drs):
+def ensure_syntactically_correct_alignment(drs):
+    '''Ensure that there is always 1 alignment, adding a dummy if none is present'''
     result_drs = []
     for clause in drs:
         if '@end' in clause:
@@ -552,15 +554,17 @@ def check_ref_clauses(drs, pp_info, do_print=True, rt = False):
 def check_doubles(drs, pp_info, rt = False):
     '''Check if there are double clauses, if so, remove them, but keep order'''
     new_drs = []
+    seen_drs = []
     for clause in drs:
         if rt:
             tmp_clause = clause[:-4]
         else:
             tmp_clause = clause
-        if tmp_clause in new_drs:
+        if tmp_clause in seen_drs:
             # keep track of not adding double
             pp_info.pp_dict["double"].append(pp_info.cur_idx)
         else:
+            seen_drs.append(tmp_clause)
             new_drs.append(clause)
     return new_drs
 
@@ -647,7 +651,7 @@ def easy_fixes(drs, pp_info, rt = False):
     return drs
 
 
-def merge_boxes(clf, boxes):
+def merge_boxes(clf, boxes, rt = False):
     '''Merge all boxes in list 'boxes' together in a single box'''
     if len(boxes) >= 2:
         # This is the box we will change all boxes to
@@ -665,7 +669,7 @@ def merge_boxes(clf, boxes):
     return clf
 
 
-def solve_loops(clf, box, pp_info):
+def solve_loops(clf, box, pp_info, rt = False):
     '''Recursive function: simply remove the box from a DRS that returned
        the subordinate relation has a loop error.
        If the new DRS gets a loop error message,
@@ -680,7 +684,7 @@ def solve_loops(clf, box, pp_info):
         if box != b:
             new_clf = merge_boxes(clf, [b, box])
             try:
-                _ = check_clf(new_clf, pp_info.signature, v=0)
+                _ = check_clf(new_clf, pp_info.signature, v=0, rt = rt)
                 # No error means the DRS is now valid, so return
                 return new_clf
             except RuntimeError as err:
@@ -695,7 +699,7 @@ def solve_loops(clf, box, pp_info):
 
     # Check if the new DRS is valid
     try:
-        _ = check_clf(new_clf, pp_info.signature, v=0)
+        _ = check_clf(new_clf, pp_info.signature, v=0, rt = rt)
         # No error means the DRS is now valid, so return
         return new_clf
     except RuntimeError as err:
@@ -707,7 +711,7 @@ def solve_loops(clf, box, pp_info):
             if new_clf == clf:
                 return False
             # Otherwise try this function again
-            new_clf = solve_loops(new_clf, box_num, pp_info)
+            new_clf = solve_loops(new_clf, box_num, pp_info, rt = rt)
         # Different error, so approach didn't work, quit
         else:
             return False
@@ -732,7 +736,7 @@ def change_box_in_drs(drs, index, box_var):
     return new_drs
 
 
-def solve_non_connected(drs, boxes1, boxes2, signature):
+def solve_non_connected(drs, boxes1, boxes2, signature, rt = False):
     '''Try to solve sets of unconnected boxes by changing a discourse variable
        to a disc var present in a different box'''
     # Introduce variables in one of the other boxes and see if that helps
@@ -741,7 +745,7 @@ def solve_non_connected(drs, boxes1, boxes2, signature):
             for box in boxes2:
                 fixed_drs = change_box_in_drs(drs, idx, box)
                 try:
-                    _ = check_clf([tuple(c) for c in fixed_drs], signature, v=0)
+                    _ = check_clf([tuple(c) for c in fixed_drs], signature, v=0, rt = rt)
                     return fixed_drs
                 except RuntimeError:
                     pass
@@ -749,7 +753,7 @@ def solve_non_connected(drs, boxes1, boxes2, signature):
             for box in boxes1:
                 fixed_drs = change_box_in_drs(drs, idx, box)
                 try:
-                    _ = check_clf([tuple(c) for c in fixed_drs], signature, v=0)
+                    _ = check_clf([tuple(c) for c in fixed_drs], signature, v=0, rt = rt)
                     return fixed_drs
                 except:
                     pass
@@ -771,12 +775,12 @@ def extensive_format_check(drs, pp_info, rt = False):
         if pp_info.fix and 'Subordinate relation has a loop' in err_message:
             err_cat = "sub loop"
             box_num = err_message.split('||')[1].split('>')[0].strip()
-            fixed_drs = solve_loops([tuple(c) for c in drs], box_num, pp_info)
+            fixed_drs = solve_loops([tuple(c) for c in drs], box_num, pp_info, rt = rt)
         elif pp_info.fix_disc and "Boxes are not connected" in err_message:
             err_cat = "boxes disconnected"
             boxes = re.findall('\{(.*?)\}', err_message)
             fixed_drs = solve_non_connected(drs, boxes[0].replace(',', '').split(),
-                                            boxes[1].replace(',', '').split(), pp_info.signature)
+                                            boxes[1].replace(',', '').split(), pp_info.signature, rt =rt)
 
     # Only get here if DRS was invalid - if we don't have a fixed one, return dummy
     if fixed_drs:
@@ -806,7 +810,7 @@ def do_postprocess(args):
         drs = remove_clauses_by_freq(drs, pp_info)
 
         if args.reference_input_token:
-            drs = ensure_correct_alignment(drs)
+            drs = ensure_syntactically_correct_alignment(drs)
 
         # Then restore the variables in the correct way
         drs = restore_variables(drs, pp_info, rt = args.reference_input_token)

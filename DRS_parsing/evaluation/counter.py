@@ -726,7 +726,7 @@ class DRS:
 			new_sense = '"n.01"'
 		if args.reference_input_token:
 			self.add_if_not_exists(self.concepts, self.concepts_idx, (val0, new_concept, new_sense, val3,
-																	  cur_clause[4], cur_clause[5], cur_clause[6]), idx)
+																	  cur_clause[5], cur_clause[6], cur_clause[7]), idx)
 		else:
 			self.add_if_not_exists(self.concepts, self.concepts_idx, (val0, new_concept, new_sense, val3), idx)
 		# Save rewritten concepts
