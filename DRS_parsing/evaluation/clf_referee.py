@@ -53,6 +53,7 @@ def check_clf(clf, signature, v=0, rt = False):
        * op_types is a list of types of the clauses in CLF
     '''
     # get argument typing and for each clause an operator type
+
     (op_types, arg_typing) = clf_typing(clf, signature, v=v, rt = rt)
     # make all terms, i.e., of unresolved term types, variables (strict mode)
     for term, type in arg_typing.items():
@@ -540,7 +541,7 @@ def box_dict_to_subordinate_rel(box_dict, presupp_rels, disc_sub_rels, v=0):
         if subs == temp_cl:
             break
     # subordination relation has no loops
-    for (a, b) in subs:
+    for (a, b) in (sorted(subs, key=lambda x: (x[0], x[1]))):
         if a == b:
             raise RuntimeError("Subordinate relation has a loop || {}>{}".format(a, b))
     return subs, direct_subs

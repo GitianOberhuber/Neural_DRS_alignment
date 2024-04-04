@@ -59,7 +59,7 @@ except ImportError:
 from numpy import median
 
 #try:
-	# only needed for Python 2
+# only needed for Python 2
 #	reload(sys)
 #	sys.setdefaultencoding('utf-8')  # necessary to avoid unicode errors
 #except:
@@ -76,6 +76,16 @@ from clf_referee import get_signature
 from html_results import coda_html
 # Import utils
 from utils_counter import *
+import nltk
+from nltk.corpus import wordnet
+from nltk.stem import WordNetLemmatizer, PorterStemmer
+from nltk.tokenize import word_tokenize
+
+nltk.download('punkt')
+nltk.download('wordnet')
+nltk.download('omw-1.4')
+import editdistance
+
 
 def build_arg_parser(args = None):
 	parser = argparse.ArgumentParser(description="Counter calculator -- arguments")
@@ -93,7 +103,7 @@ def build_arg_parser(args = None):
 	parser.add_argument('-mem', '--mem_limit', type=int, default=1000,
 						help='Memory limit in MBs (default 1000 -> 1G). Note that this is per parallel thread! If you use -par 4, each thread gets 1000 MB with default settings.')
 	parser.add_argument('-s', '--smart', default='conc', action='store', choices=[
-						'no', 'conc'], help='What kind of smart mapping do we use (default concepts)')
+		'no', 'conc'], help='What kind of smart mapping do we use (default concepts)')
 
 	# Output settings (often not necessary to add or change), for example printing specific stats to a file, or to the screen
 	parser.add_argument('-prin', action='store_true',
@@ -147,7 +157,11 @@ def build_arg_parser(args = None):
 						help="When comparing DRS clauses, take references to original token start- and end-index into account and only consider a clause pair to be matching"
 							 "if their token indices also match")
 	parser.add_argument("-ti", "--evaluate_token_ignore_casing", action='store_true',
-						help="When -et is specified, do not take casing into account when evaluating alignment")
+						help="When -ti is specified, do not take casing into account when evaluating alignment")
+	parser.add_argument("-mr", "--match_roughly", action='store_true',
+						help="When -mr is specified, consider the tokens of the alignment to be matching if they are similar, i.e one is a lemma, synonym or stemmed version of the other")
+	parser.add_argument('-ae', "--alignment_errors", required=False, type=str,
+						help='Path to a textfile that will be filled with DRS that contain incorrect alignments, only valid if -rt and -et are also specified')
 
 	if args is not None:
 		args = args.split()
@@ -187,6 +201,26 @@ def build_arg_parser(args = None):
 	return args
 
 
+def remove_refs_invalid_drs(clause_list):
+	res = []
+	for i,drs in enumerate(clause_list):
+		invalid_drs = False
+		for cl in drs:
+			for el in cl:
+				if "alwayswrongconcept" in el:
+					invalid_drs = True
+		if invalid_drs:
+			drs_without_ref = []
+			for cl in drs:
+				if cl[1] == "REF":
+					pass
+				else:
+					drs_without_ref.append(cl)
+			res.append(drs_without_ref)
+		else:
+			res.append(drs)
+	return res
+
 def remove_refs(clause_list, original_clauses, rt = False):
 	'''Remove unneccessary/redundant b REF x clauses, only keep them if x never occurs again in the same box'''
 	final_clauses, final_original = [], []
@@ -206,15 +240,25 @@ def remove_refs(clause_list, original_clauses, rt = False):
 	return final_clauses, final_original
 
 
-def get_clauses(file_name, signature, ill_type, rt = False, include_REF = False):
+def get_clauses(file_name, signature, ill_type, rt = False, include_REF = False, read_nl_sentences = False):
 	'''Function that returns a list of DRSs (that consists of clauses)'''
-	clause_list, original_clauses, cur_orig, cur_clauses = [], [], [], []
+	clause_list, original_clauses, cur_orig, cur_clauses, input_sequences = [], [], [], [], []
 
 	with open(file_name, 'r') as in_f:
 		input_lines = in_f.read().split('\n')
+		count_percent_sign = 0 #for reading the natural language sentence, i.e every third comment (indicated by %),
 		for idx, line in enumerate(input_lines):
 			if line.strip().startswith('%'):
-				pass  # skip comments
+				if read_nl_sentences and line.strip().startswith('%%%'):
+					count_percent_sign += 1
+					if count_percent_sign % 3 == 0: #read every third comment instead of discarding
+						input_sequence = line.replace("%%% ", "").replace("ø ", "")
+						if input_sequence is None or input_sequence == "":
+							print(1)
+						count_percent_sign = 0
+				else:
+					pass
+
 			elif not line.strip():
 				if cur_clauses:  # newline, so DRS is finished, add to list. Ignore double/clause newlines
 					# First check if the DRS is valid, will error if invalid
@@ -223,6 +267,8 @@ def get_clauses(file_name, signature, ill_type, rt = False, include_REF = False)
 						check_clf([tuple(c) for c in cur_clauses], signature, v=False, rt = rt)
 						clause_list.append(cur_clauses)
 						original_clauses.append(cur_orig)
+						if read_nl_sentences:
+							input_sequences.append(input_sequence)
 					except Exception as e:
 						if ill_type == 'error':
 							raise ValueError(e)
@@ -251,13 +297,13 @@ def get_clauses(file_name, signature, ill_type, rt = False, include_REF = False)
 
 				else:
 					cur_clauses.append(line.split(' %', 1)[0].strip().split()) #remove comments
-					#ls = line.split(' %', 1)[0].strip().split()
-					#if len(ls) > 4:
-					#	if len(ls) == 5:
+				#ls = line.split(' %', 1)[0].strip().split()
+				#if len(ls) > 4:
+				#	if len(ls) == 5:
 				#			ls = ls[:3]
-					#	else:
-					#		ls = ls[:4]
-					#cur_clauses.append(ls)
+				#	else:
+				#		ls = ls[:4]
+				#cur_clauses.append(ls)
 				cur_orig.append(line)
 
 	if cur_clauses:  # no newline at the end, still add the DRS
@@ -289,10 +335,10 @@ def get_clauses(file_name, signature, ill_type, rt = False, include_REF = False)
 
 	# If we want to include REF clauses we are done now
 	if include_REF:
-		return clause_list, original_clauses
+		return remove_refs_invalid_drs(clause_list), original_clauses, input_sequences
 	else: #else remove redundant REF clauses
 		final_clauses, final_original = remove_refs(clause_list, original_clauses, rt)
-		return final_clauses, final_original
+		return final_clauses, final_original, input_sequences
 
 
 def var_occurs(clauses, var, box, idx, rt = False):
@@ -459,7 +505,7 @@ def get_mappings(clause_pairs, prod_drs, gold_drs, prec, rec, significant):
 	return print_match, print_no_match, match_division, idv_dict
 
 
-def get_matching_clauses(arg_list):
+def get_matching_clauses(arg_list, incorrect_alignments_file = None, incorrect_alignments_file_fc = None, input_sequence = None):
 	'''Function that gets matching clauses (easier to parallelize)'''
 	start_time = time.time()
 	# Unpack arguments to make things easier
@@ -485,13 +531,48 @@ def get_matching_clauses(arg_list):
 		(best_mapping, best_match_num, found_idx, smart_fscores, clause_pairs, alignment) = get_best_match(prod_drs, gold_drs, args, single)
 		(precision, recall, best_f_score) = compute_f(best_match_num, prod_drs.total_clauses, gold_drs.total_clauses, args.significant, False)
 
-		clause_pairs_correct_alignment, best_match_num_correct_alignment, clause_pairs_correct_alignment_idxs, best_match_num_correct_alignment_idxs = 0,0,0,0
+		if incorrect_alignments_file is not None and incorrect_alignments_file_fc is not None:
+			incorrect_alignments = filter_matching_clauspairs_by_alignment(clause_pairs, alignment, ignore_casing = args.evaluate_token_ignore_casing, match_tokenIdxs = False,
+                                                        match_roughly= args.match_roughly, return_incorrect= True, input_sequences = input_sequence)
+			if len(incorrect_alignments) > 0:
+				incorrect_alignments_file.write("\nSentence: " + input_sequence)
+				incorrect_alignments_file.write("\n" +  "Prec, Rec, F-score: " + str(precision) + ", " + str(recall) + ", " + str(best_f_score))
+				incorrect_alignments_file.write("\n\n")
+				incorrect_alignments_file.write("\n".join([str(v) for k,v in incorrect_alignments.items()]))
+				incorrect_alignments_file.write("\n\n")
+				incorrect_alignments_file.write("Prod:\n" + "\n".join(original_prod))
+				incorrect_alignments_file.write("\n\n")
+				incorrect_alignments_file.write("Gold:\n" + "\n".join(original_gold))
+				incorrect_alignments_file.write("\n")
+				incorrect_alignments_file.write("##################################################################")
+				incorrect_alignments_file.write("\n\n\n")
+
+				if precision == 1 and recall == 1:
+					incorrect_alignments_file_fc.write("\nSentence: " + input_sequence)
+					incorrect_alignments_file_fc.write("\n" + "Prec, Rec, F-score: " + str(precision) + ", " + str(recall) + ", " + str(best_f_score))
+					incorrect_alignments_file_fc.write("\n\n")
+					incorrect_alignments_file_fc.write("\n".join([str(v) for k, v in incorrect_alignments.items()]))
+					incorrect_alignments_file_fc.write("\n\n")
+					incorrect_alignments_file_fc.write("Prod:\n" + "\n".join(original_prod))
+					incorrect_alignments_file_fc.write("\n\n")
+					incorrect_alignments_file_fc.write("Gold:\n" + "\n".join(original_gold))
+					incorrect_alignments_file_fc.write("\n")
+					incorrect_alignments_file_fc.write("##################################################################")
+					incorrect_alignments_file_fc.write("\n\n\n")
+
+		clause_pairs_correct_alignment_token, best_match_num_correct_alignment_token, clause_pairs_correct_alignment_idxs, best_match_num_correct_alignment_idxs, clause_pairs_correct_alignment_full, best_match_num_correct_alignment_full = 0,0,0,0,0,0
 		if (args.reference_input_token and args.evaluate_token):
-			clause_pairs_correct_alignment = filter_matching_clauspairs_by_alignment(clause_pairs, alignment, ignore_casing = args.evaluate_token_ignore_casing, match_tokenIdxs = False)
-			best_match_num_correct_alignment = len(clause_pairs_correct_alignment)
+			clause_pairs_correct_alignment_token = filter_matching_clauspairs_by_alignment(clause_pairs, alignment, match_alignmentToken=True, ignore_casing = args.evaluate_token_ignore_casing, match_tokenIdxs = False,
+                                                                                     match_roughly= args.match_roughly, input_sequences= input_sequence)
+			best_match_num_correct_alignment_token = len(clause_pairs_correct_alignment_token)
 		if args.reference_input_token and args.evaluate_indices:
-			clause_pairs_correct_alignment_idxs = filter_matching_clauspairs_by_alignment(clause_pairs, alignment, ignore_casing=args.evaluate_token_ignore_casing, match_tokenIdxs=True)
+			clause_pairs_correct_alignment_idxs = filter_matching_clauspairs_by_alignment(clause_pairs, alignment, match_alignmentToken=False, ignore_casing=args.evaluate_token_ignore_casing, match_tokenIdxs=True,
+                                                                                          match_roughly= args.match_roughly, input_sequences= input_sequence)
 			best_match_num_correct_alignment_idxs = len(clause_pairs_correct_alignment_idxs)
+		if args.reference_input_token and args.evaluate_indices and args.evaluate_token:
+			clause_pairs_correct_alignment_full = filter_matching_clauspairs_by_alignment(clause_pairs, alignment, match_alignmentToken=True, ignore_casing=args.evaluate_token_ignore_casing, match_tokenIdxs=True,
+																							 match_roughly=args.match_roughly, input_sequences=input_sequence)
+			best_match_num_correct_alignment_full = len(clause_pairs_correct_alignment_full)
 
 		if not args.no_mapping:
 			# Print clause mapping if -prin is used and we either do multiple scores, or just had a single DRS
@@ -516,43 +597,125 @@ def get_matching_clauses(arg_list):
 		gold_clause_division = [gold_drs.num_operators, gold_drs.num_roles, gold_drs.num_concepts, get_num_concepts(gold_drs.concepts, 'n'), get_num_concepts(gold_drs.concepts, 'v'), get_num_concepts(gold_drs.concepts, 'a'), get_num_concepts(gold_drs.concepts, 'r'), get_num_concepts(gold_drs.concepts, 'v') + get_num_concepts(gold_drs.concepts, 'a')]
 		if args.ms and not single:
 			print_results([[best_match_num, prod_drs.total_clauses, gold_drs.total_clauses, smart_fscores, found_idx, match_division, prod_clause_division, gold_clause_division, len(prod_drs.var_map), idv_dict]],
-				False, start_time, single, args)
-		return [best_match_num, prod_drs.total_clauses, gold_drs.total_clauses, smart_fscores, found_idx, match_division, prod_clause_division, gold_clause_division, len(prod_drs.var_map), idv_dict, best_match_num_correct_alignment, best_match_num_correct_alignment_idxs]
+						  False, start_time, single, args)
+		return [best_match_num, prod_drs.total_clauses, gold_drs.total_clauses, smart_fscores, found_idx, match_division, prod_clause_division, gold_clause_division, len(prod_drs.var_map), idv_dict, best_match_num_correct_alignment_token, best_match_num_correct_alignment_full, best_match_num_correct_alignment_idxs, len(incorrect_alignments)]
 
-def filter_matching_clauspairs_by_alignment(clause_pairs, alignment, ignore_casing = False, match_tokenIdxs = True):
+def filter_matching_clauspairs_by_alignment(clause_pairs, alignment, ignore_casing = False, match_alignmentToken = True, match_tokenIdxs = True, match_roughly = False,
+											return_incorrect = False, input_sequences = None):
 	if set(clause_pairs.keys()) != set(alignment.keys()):
 		raise ValueError("Alignment and clause-pair dictionaries have different key-sets!")
 
 	res = {}
 	for keypair in clause_pairs.keys():
-		match = True
 		alignment_prod, alignment_gold = alignment[keypair]
-		if '~' in alignment_gold[0]:
-			tokenMatch = alignment_prod[0].lower() in alignment_gold[0].lower() if ignore_casing else alignment_prod[0] in alignment_gold[0]
-		else:
-			tokenMatch = alignment_prod[0].lower() == alignment_gold[0].lower() if ignore_casing else alignment_prod[0] == alignment_gold[0]
-		if match_tokenIdxs:
-			match = tokenMatch and alignment_prod[1] == alignment_gold[1] and alignment_prod[2] == alignment_gold[2]
-		else:
-			match = tokenMatch
 
-		if match:
-			res[keypair] = clause_pairs[keypair]
+		if match_alignmentToken and not match_tokenIdxs:
+			match = alignment_matchTokens(alignment_prod[0], alignment_gold[0], ignore_casing = ignore_casing, match_roughly= match_roughly, input_sequences = input_sequences)
+		elif not match_alignmentToken and match_tokenIdxs:
+			match = alignment_prod[1] == alignment_gold[1] and alignment_prod[2] == alignment_gold[2]
+		else:
+			tokenMatch = alignment_matchTokens(alignment_prod[0], alignment_gold[0], ignore_casing=ignore_casing,
+										  match_roughly=match_roughly, input_sequences=input_sequences)
+			match = tokenMatch and alignment_prod[1] == alignment_gold[1] and alignment_prod[2] == alignment_gold[2]
+
+
+		if return_incorrect:
+			if not match:
+				res[keypair] = alignment[keypair]
+		else:
+			if match:
+				res[keypair] = clause_pairs[keypair]
 	return res
 
+
+def alignment_matchTokens(token_prod, token_gold, ignore_casing = False, match_roughly = False, input_sequences = None):
+	if '~' in token_gold:
+		if match_roughly:
+			return rough_tokenMatch(token_prod.lower(), token_gold.lower(), check_using_inclusion = True, input_sequences = input_sequences) if ignore_casing \
+				else rough_tokenMatch(token_prod, token_gold, check_using_inclusion = True, input_sequences = input_sequences)
+		else:
+			return token_prod.lower() in token_gold.lower() if ignore_casing else token_prod in token_gold
+	else:
+		if match_roughly:
+			return rough_tokenMatch(token_prod.lower(), token_gold.lower(), input_sequences = input_sequences) if ignore_casing \
+				else rough_tokenMatch(token_prod, token_gold, input_sequences = input_sequences)
+		else:
+			return token_prod.lower() == token_gold.lower() if ignore_casing else token_prod == token_gold
+
+def rough_tokenMatch(token_prod, token_gold, check_using_inclusion = False, input_sequences = None):
+	'''
+	tokens1 = word_tokenize(token_prod)
+	tokens2 = word_tokenize(token_gold)
+
+	# Initialize stemmer and lemmatizer
+	stemmer = PorterStemmer()
+	lemmatizer = WordNetLemmatizer()
+
+	# Stem and lemmatize words
+	stemmed_word1 = [stemmer.stem(token) for token in tokens1]
+	stemmed_word2 = [stemmer.stem(token) for token in tokens2]
+
+	lemmatized_word1 = [lemmatizer.lemmatize(token) for token in tokens1]
+	lemmatized_word2 = [lemmatizer.lemmatize(token) for token in tokens2]
+
+	# Check if words are equal, stemmed, lemmatized, or synonyms
+	if check_using_inclusion:
+		if token_prod in token_gold:
+			return True
+		elif stemmed_word1 in stemmed_word2:
+			return True
+		elif lemmatized_word1 in lemmatized_word2:
+			return True
+	else:
+		if token_prod == token_gold:
+			return True
+		elif stemmed_word1 == stemmed_word2:
+			return True
+		elif lemmatized_word1 == lemmatized_word2:
+			return True
+	synonyms1 = set()
+	synonyms2 = set()
+	for token in tokens1:
+		synonyms1.update({syn.name() for syn in wordnet.synsets(token)})
+	for token in tokens2:
+		synonyms2.update({syn.name() for syn in wordnet.synsets(token)})
+	if synonyms1.intersection(synonyms2):
+		return True
+	'''
+	if (token_prod == token_gold and token_prod != 'unk' and token_gold != 'unk')  or ('~' in token_gold and '~' not in token_prod and token_prod in token_gold.split('~')):
+		return True
+	else:
+		best_match = find_best_match_editdistance(token_prod, input_sequences)
+		return best_match == token_gold
+
+
+def find_best_match_editdistance(token_prod, input_sequences):
+	best_match = None
+	min_distance = 99999
+	if input_sequences is None or input_sequences == "":
+		print(1)
+	for tok in [x.lower() for x in input_sequences.split()]:
+		distance = editdistance.eval(token_prod, tok)
+		if distance < min_distance:
+			min_distance = distance
+			best_match = tok
+	return best_match
 
 def print_results(res_list, no_print, start_time, single, args, verbose = True):
 	'''Print the final or inbetween scores -- res_list has format '''
 
 	# Calculate average scores
 	total_match_num = sum([x[0] for x in res_list if x])
-	total_match_num_correct_alignment = sum([x[10] for x in res_list if x])
-	total_match_num_correct_alignment_idx = sum([x[11] for x in res_list if x])
+	total_match_num_correct_alignment_token = sum([x[10] for x in res_list if x])
+	total_match_num_correct_alignment_full = sum([x[11] for x in res_list if x])
+	total_match_num_correct_alignment_idx = sum([x[12] for x in res_list if x])
 	count_fully_correct_drs = sum(1 for x in res_list if x[0] == x[1] == x[2])
 	indices_fully_correct_drs = [index for index, x in enumerate(res_list) if x[0] == x[1] == x[2]]
 	total_match_num_correct_drs = sum(x[0] for x in res_list if x[0] == x[1] == x[2])
-	total_match_num_correct_drs_correct_alignment = sum(x[10] for x in res_list if x[0] == x[1] == x[2])
-	total_match_num_correct_drs_correct_alignment_idx = sum(x[11] for x in res_list if x[0] == x[1] == x[2])
+	total_match_num_correct_drs_correct_alignment_token = sum(x[10] for x in res_list if x[0] == x[1] == x[2])
+	total_match_num_correct_drs_correct_alignment_full = sum(x[11] for x in res_list if x[0] == x[1] == x[2])
+	total_match_num_correct_drs_correct_alignment_idx = sum(x[12] for x in res_list if x[0] == x[1] == x[2])
+
 	total_test_num = sum([x[1] for x in res_list if x])
 	total_gold_num = sum([x[2] for x in res_list if x])
 	found_idx = round(float(sum([x[4] for x in res_list if x])) / float(len([x[4] for x in res_list if x])), args.significant)
@@ -560,6 +723,11 @@ def print_results(res_list, no_print, start_time, single, args, verbose = True):
 	match_division = [x[5] for x in res_list]
 	prod_division = [x[6] for x in res_list]
 	gold_division = [x[7] for x in res_list]
+	count_alignment_errors_token_only = total_match_num - total_match_num_correct_alignment_token
+	count_alignment_errors_token_and_indices = total_match_num - total_match_num_correct_alignment_full
+	count_alignment_errors_indices_only = total_match_num - total_match_num_correct_alignment_idx
+
+	#print(indices_fully_correct_drs)
 
 	# Calculate detailed F-scores for clauses, roles, concepts etc
 	name_list = ['operators','roles','concepts','nouns','verbs','adjectives','adverbs','events']
@@ -570,16 +738,20 @@ def print_results(res_list, no_print, start_time, single, args, verbose = True):
 	# Output document-level score (a single f-score for all DRS pairs in two files)
 	(precision, recall, best_f_score) = compute_f(total_match_num, total_test_num, total_gold_num, args.significant, False)
 
-	alignment_accuracy, alignment_accuracy_fully_correct, alignment_accuracy_idx, alignment_accuracy_fully_correct_idx = 0,0,0,0
-	precision_align, recall_align, best_f_score_align, precision_align_idx, recall_align_idx, best_f_score_align_idx = 0,0,0,0,0,0
-	if (args.reference_input_token and args.evaluate_token):
-		(precision_align, recall_align, best_f_score_align) = compute_f(total_match_num_correct_alignment, total_test_num, total_gold_num, args.significant, False)
+	alignment_accuracy_token, alignment_accuracy_idx, alignment_accuracy_full, alignment_accuracy_fully_correct_token, alignment_accuracy_fully_correct_idx, alignment_accuracy_fully_correct_full = 0,0,0,0,0,0
+	precision_align_token, recall_align_token, best_f_score_align_token, precision_align_idx, recall_align_idx, best_f_score_align_idx, precision_align_full, recall_align_full, best_f_score_align_full = 0,0,0,0,0,0,0,0,0
+	if (args.reference_input_token):
+		(precision_align_token, recall_align_token, best_f_score_align_token) = compute_f(total_match_num_correct_alignment_token, total_test_num, total_gold_num, args.significant, False)
 		(precision_align_idx, recall_align_idx, best_f_score_align_idx) = compute_f(total_match_num_correct_alignment_idx, total_test_num, total_gold_num, args.significant, False)
+		(precision_align_full, recall_align_full, best_f_score_align_full) = compute_f(total_match_num_correct_alignment_full, total_test_num, total_gold_num, args.significant, False)
 
-		alignment_accuracy = total_match_num_correct_alignment / total_match_num
-		alignment_accuracy_fully_correct = total_match_num_correct_drs_correct_alignment / total_match_num_correct_drs
+		alignment_accuracy_token = total_match_num_correct_alignment_token / total_match_num
 		alignment_accuracy_idx = total_match_num_correct_alignment_idx / total_match_num
+		alignment_accuracy_full = total_match_num_correct_alignment_full / total_match_num
+
+		alignment_accuracy_fully_correct_token = total_match_num_correct_drs_correct_alignment_token / total_match_num_correct_drs
 		alignment_accuracy_fully_correct_idx = total_match_num_correct_drs_correct_alignment_idx / total_match_num_correct_drs
+		alignment_accuracy_fully_correct_full = total_match_num_correct_drs_correct_alignment_full / total_match_num_correct_drs
 
 	if not res_list:
 		return []  # no results for some reason
@@ -602,11 +774,13 @@ def print_results(res_list, no_print, start_time, single, args, verbose = True):
 			print("F-score  : {0}".format(round(best_f_score, args.significant)))
 			if (args.reference_input_token and args.evaluate_token):
 				print("-------- Alignment ---------")
-				print("Alignment Accuracy (without indices): {0}".format(round(alignment_accuracy, args.significant)))
-				print("Alignment Accuracy for fully correct DRS (without indices): {0}".format(round(alignment_accuracy_fully_correct, args.significant)))
-				print("Alignment Accuracy (with indices): {0}".format(round(alignment_accuracy_idx, args.significant)))
-				print("Alignment Accuracy for fully correct DRS (with indices): {0}".format(round(alignment_accuracy_fully_correct_idx, args.significant)))
-				print("F-score  : {0}".format(round(best_f_score_align, args.significant)))
+				#print("Alignment Accuracy (without indices): {0}".format(round(alignment_accuracy, args.significant)))
+				#print("Alignment Accuracy for fully correct DRS (without indices): {0}".format(round(alignment_accuracy_fully_correct, args.significant)))
+				#print("Alignment Accuracy (with indices): {0}".format(round(alignment_accuracy_idx, args.significant)))
+				#print("Alignment Accuracy for fully correct DRS (with indices): {0}".format(round(alignment_accuracy_fully_correct_idx, args.significant)))
+				#print("Count Alignment Errors (without indices): {0}".format(count_alignment_errors_token_only))
+				#print("Count Alignment Errors (with indices): {0}".format(count_alignment_errors_token_and_indices))
+				#print("F-score  : {0}".format(round(best_f_score_align, args.significant)))
 
 		# Print specific output here
 		if args.prin:
@@ -634,7 +808,7 @@ def print_results(res_list, no_print, start_time, single, args, verbose = True):
 
 	if verbose:
 		print('Total processing time: {0} sec'.format(runtime))
-	return [best_f_score, best_f_score_align, best_f_score_align_idx, alignment_accuracy, alignment_accuracy_fully_correct, alignment_accuracy_idx, alignment_accuracy_fully_correct_idx]
+	return [best_f_score, best_f_score_align_token, best_f_score_align_full, best_f_score_align_idx, alignment_accuracy_token, alignment_accuracy_fully_correct_token, alignment_accuracy_full, alignment_accuracy_fully_correct_full, alignment_accuracy_idx, alignment_accuracy_fully_correct_idx, count_alignment_errors_token_only, count_alignment_errors_token_and_indices, count_alignment_errors_indices_only, count_fully_correct_drs, len(res_list)]
 
 
 def check_input(clauses_prod_list, original_prod, original_gold, clauses_gold_list, baseline, f1, max_clauses, single, verbose = False):
@@ -774,7 +948,7 @@ class DRS:
 		if between_quotes(cur_clause[2]):
 			val2 = self.rename_var(cur_clause[3], var_type, args) #get renamed variable
 			to_add = (val0, cur_clause[1], cur_clause[2], val2) if not args.reference_input_token else \
-					(val0, cur_clause[1], cur_clause[2], val2, cur_clause[5], cur_clause[6], cur_clause[7])
+				(val0, cur_clause[1], cur_clause[2], val2, cur_clause[5], cur_clause[6], cur_clause[7])
 			self.add_if_not_exists(self.op_two_vars_abs1, self.op_two_vars_abs_idx1, to_add, idx)
 		# If last item is between quotes it belongs in op_two_vars_abs2 (b2 EQU t1 "now")
 		elif between_quotes(cur_clause[3]):
@@ -889,11 +1063,23 @@ def main(args, verbose = True):
 	res = []
 
 	# Get all the clauses and check if they are valid
-	clauses_prod_list, original_prod = get_clauses(args.f1, signature, args.ill, args.reference_input_token, args.include_ref)
+	clauses_gold_list, original_gold, input_sequences = get_clauses(args.f2, signature, args.ill, args.reference_input_token, include_REF = args.include_ref, read_nl_sentences = True )
 
-	clauses_gold_list, original_gold = get_clauses(args.f2, signature, args.ill, args.reference_input_token, args.include_ref)
+	clauses_prod_list, original_prod, _ = get_clauses(args.f1, signature, args.ill, args.reference_input_token, include_REF = args.include_ref)
 
 
+	if args.alignment_errors:
+		if os.path.exists(args.alignment_errors):
+			# If the file exists, just open it
+			alignerror_file = open( args.alignment_errors, 'a')
+			alignerror_file_fc = open( args.alignment_errors + ".fc", 'a')
+		else:
+			# If the file doesn't exist, create it and then open it
+			alignerror_file = open( args.alignment_errors, 'w+')
+			alignerror_file_fc = open( args.alignment_errors + ".fc", 'w+')
+	else:
+		alignerror_file = None
+		alignerror_file_fc = None
 
 	# Count ill-DRSs in the system output
 	global ill_drs_ids
@@ -918,9 +1104,9 @@ def main(args, verbose = True):
 		if args.parallel == 1:  # no need for parallelization for p=1
 			all_results = []
 			for num_count, arguments in enumerate(arg_list):
-				all_results.append(get_matching_clauses(arguments))
+				all_results.append(get_matching_clauses(arguments, alignerror_file, alignerror_file_fc, input_sequences[num_count]))
 		else:
-			all_results = multiprocessing.Pool(args.parallel).map(get_matching_clauses, arg_list)
+			all_results = multiprocessing.Pool(args.parallel).map(get_matching_clauses, arg_list, alignerror_file, alignerror_file_fc, input_sequences)
 
 		# If we find results, print them in a nice way
 		if all_results == ['skip']: #skip result
@@ -967,12 +1153,16 @@ def main(args, verbose = True):
 		save_detailed_stats([x[9] for x in all_results], args)
 
 	#return [best_f_score, best_f_score_align, best_f_score_align_idx, alignment_accuracy,
-#				alignment_accuracy_fully_correct, alignment_accuracy_idx, alignment_accuracy_fully_correct_idx]
+	#				alignment_accuracy_fully_correct, alignment_accuracy_idx, alignment_accuracy_fully_correct_idx]
 
 	return (round(float(sum([x[0] for x in res])) / float(args.runs), args.significant), round(float(sum([x[1] for x in res])) / float(args.runs), args.significant),
 			round(float(sum([x[2] for x in res])) / float(args.runs), args.significant), round(float(sum([x[3] for x in res])) / float(args.runs), args.significant),
 			round(float(sum([x[4] for x in res])) / float(args.runs), args.significant), round(float(sum([x[5] for x in res])) / float(args.runs), args.significant),
-			round(float(sum([x[6] for x in res])) / float(args.runs), args.significant))
+			round(float(sum([x[6] for x in res])) / float(args.runs), args.significant), round(float(sum([x[7] for x in res])) / float(args.runs), args.significant),
+			round(float(sum([x[8] for x in res])) / float(args.runs), args.significant), round(float(sum([x[9] for x in res])) / float(args.runs), args.significant),
+			round(float(sum([x[10] for x in res])) / float(args.runs), args.significant), round(float(sum([x[11] for x in res])) / float(args.runs), args.significant),
+			round(float(sum([x[12] for x in res])) / float(args.runs), args.significant), round(float(sum([x[13] for x in res])) / float(args.runs), args.significant),
+			round(float(sum([x[14] for x in res])) / float(args.runs), args.significant))
 
 ERROR_LOG = sys.stderr
 DEBUG_LOG = sys.stderr

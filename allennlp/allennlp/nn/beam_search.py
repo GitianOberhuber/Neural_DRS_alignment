@@ -344,7 +344,7 @@ class BeamSearch:
             tmp_tensor = tensor.clone()
             tmp_tensor[:, 0] = 0
             tmp_tensor[:, tensor.shape[1] - 1] = 0
-            if len(input_list) > 1 and input_list[0][-2] in string.punctuation:
+            if len(input_list[0]) > 1 and input_list[0][-2] in string.punctuation:
                 tmp_tensor[:,  tensor.shape[1] - 2] = 0
             argmax_idx = torch.argmax(tmp_tensor)
 

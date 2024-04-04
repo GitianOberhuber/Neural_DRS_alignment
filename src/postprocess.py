@@ -333,6 +333,9 @@ class RestoreVariables:
                     elif len(cur_clause) == 4:  # Clause has 4 items
                         self.rewrite_length_four(cur_clause)
                     else:  # Clause has wrong length, ignore
+
+                        if len(cur_clause) in [6,7,8]:
+                            print("Warning! Clause length is one of [6,7,8]. Did you mean to specify -rt commandline option?")
                         self.pp_info.pp_dict["wrong arity"].append(self.pp_info.cur_idx)
             except:
                 self.pp_info.pp_dict["variables"].append(self.pp_info.cur_idx)
@@ -415,7 +418,7 @@ def remove_unknown(clause_list_init, pp_info):
     clause_list = []
     for clause in clause_list_init:
         if '@@UNKNOWN@@' in clause:
-            #keep the @@UNKNOWN@@ if it is the alignment for better comparison to pure DRS-parsing task
+            #keep the @@UNKNOWN@@ if it is only in the alignment for better comparison to pure DRS-parsing task
             unknown_occs = clause.count('@@UNKNOWN@@')
             unknown_occs_in_alignment = clause.count('% @@UNKNOWN@@')
             if unknown_occs_in_alignment == unknown_occs:
@@ -490,14 +493,15 @@ def is_disc_ref(main_item, item, clause_idx):
     return main_item not in op_boxes and not between_quotes(item)
 
 
-def get_disc_refs(drs):
+def get_disc_refs(drs, rt = False):
     '''Get all discourse referents that occur in non-REF clauses
        Also save corresponding box so we know where to introduce'''
     disc_refs = []
     boxes = []
     for cur_clause in [x for x in drs if x[1] != "REF"]:
         # If the identifier is not in op_boxes we found a discourse referent
-        if len(cur_clause) == 3:
+
+        if (len(cur_clause) == 3) or (len(cur_clause) == 7 and rt) :
             if cur_clause[2] not in disc_refs and is_disc_ref(cur_clause[1], cur_clause[2], 2):
                 disc_refs.append(cur_clause[2])
                 boxes.append(cur_clause[0])
@@ -537,7 +541,7 @@ def check_ref_clauses(drs, pp_info, do_print=True, rt = False):
     refs = [x[2] for x in drs if x[1] == 'REF']  # all discourse referents introduced by REF
 
     # Save discourse referents found in other non-REF clauses
-    disc_refs, disc_boxes = get_disc_refs(drs)
+    disc_refs, disc_boxes = get_disc_refs(drs, rt = rt)
 
     # Add missing REF clauses & remove spurious REFs
     drs = add_missing_ref(refs, disc_refs, disc_boxes, drs, pp_info, do_print=do_print)
@@ -736,7 +740,7 @@ def change_box_in_drs(drs, index, box_var):
     return new_drs
 
 
-def solve_non_connected(drs, boxes1, boxes2, signature, rt = False):
+def solve_non_connected(drs, boxes1, boxes2, signature, rt = False, f= None):
     '''Try to solve sets of unconnected boxes by changing a discourse variable
        to a disc var present in a different box'''
     # Introduce variables in one of the other boxes and see if that helps
@@ -801,8 +805,20 @@ def do_postprocess(args):
                                 args.var, args.baseline, args.fix, args.fix_disc, args.no_referee)
 
     drss = []
+
+
+    if os.path.exists("/home/krise/Documents/masterarbeit/experiment_results/tok_bilinearAtt_lstm_4epoch_refsep_06_02_24/run1/pp_debug.txt"):
+        # If the file exists, just open it
+        f = open("/home/krise/Documents/masterarbeit/experiment_results/tok_bilinearAtt_lstm_4epoch_refsep_06_02_24/run1/pp_debug.txt", 'r+')
+    else:
+        # If the file doesn't exist, create it and then open it
+        f = open("/home/krise/Documents/masterarbeit/experiment_results/tok_bilinearAtt_lstm_4epoch_refsep_06_02_24/run1/pp_debug.txt", 'w+')
+
+
     # Each line is a DRS, loop over them here one-by-one
     for idx, line in enumerate(pp_info.lines):
+        f.write("\n##############################  " + str(idx) + "  ##############################\n" )
+
         pp_info.cur_idx = idx
         # Restore clause format, we now have a list of clauses (list of strings)
         drs = restore_clauses(line, pp_info)
@@ -823,6 +839,8 @@ def do_postprocess(args):
 
         # Now add default for DRSs that are still invalid by doing semantic check with referee
         if not args.no_referee:
+            if idx == 78:
+                print("db")
             drs = extensive_format_check(drs, pp_info, rt = args.reference_input_token)
 
         # Save final DRS

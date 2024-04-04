@@ -15,14 +15,24 @@ def read_f1_from_file(filepath):
 
 def fancyPrint(res_list):
     if not res_list is None and not len(res_list) == 0:
+        print("-------- F-Score ---------")
         print("F-score, DRS only : {0}".format(round(res_list[0], 4)))
-        print("F-score, alignment : {0}".format(round(res_list[1], 4)))
-        print("F-score, alignment + indices : {0}".format(round(res_list[2], 4)))
-        print("-------- Alignment ---------")
-        print("Alignment Accuracy (without indices): {0}".format(round(res_list[3], 3)))
-        print("Alignment Accuracy for fully correct DRS (without indices): {0}".format(round(res_list[4], 3)))
-        print("Alignment Accuracy (with indices): {0}".format(round(res_list[5], 3)))
-        print("Alignment Accuracy for fully correct DRS (with indices): {0}".format(round(res_list[6], 3)))
+        print("F-score, alignment token : {0}".format(round(res_list[1], 4)))
+        print("F-score, alignment indices : {0}".format(round(res_list[3], 4)))
+        print("F-score, alignment full : {0}".format(round(res_list[2], 4)))
+        print("-------- Alignment Accuracy ---------")
+        print("Alignment Accuracy token: {0}".format(round(res_list[4], 3)))
+        print("Alignment Accuracy token for fully correct DRS: {0}".format(round(res_list[5], 3)))
+        print("Alignment Accuracy indices: {0}".format(round(res_list[8], 3)))
+        print("Alignment Accuracy indices for fully correct DRS: {0}".format(round(res_list[9], 3)))
+        print("Alignment Accuracy full: {0}".format(round(res_list[6], 3)))
+        print("Alignment Accuracy full for fully correct DRS: {0}".format(round(res_list[7], 3)))
+        print("-------- Counts ---------")
+        print("Fully Correct DRS: {0} out of {1} ({2}%)".format(round(res_list[13], 3), round(res_list[14], 3), round(res_list[13] / res_list[14]* 100), 3 ) )
+        print("Count Alignment Errors token: {0}".format(round(res_list[10], 3)))
+        print("Count Alignment Errors indices: {0}".format(round(res_list[12], 3)))
+        print("Count Alignment Errors full: {0}".format(round(res_list[11], 3)))
+
 
 def sum_lists_elementwise(lists, num_runs):
     # Ensure all lists have the same length
@@ -47,8 +57,8 @@ def average_fine_tuned(tune_dir, calc_from_output = False):
             if calc_from_output:
                 output_path = os.path.join(run_path, "output")
                 if os.path.isdir(output_path):
-                    dev_file = os.path.join(output_path, "output_{}_epoch_{}.seq.drs.out".format("dev", epochs))
-                    test_file = os.path.join(output_path, "output_{}_epoch_{}.seq.drs.out".format("test", epochs))
+                    dev_file = os.path.join(output_path, "output_{}_epoch_{}.seq.drs.attentAlign.out".format("dev", epochs))
+                    test_file = os.path.join(output_path, "output_{}_epoch_{}.seq.drs.attentAlign.out".format("test", epochs))
                     dev_present = (os.path.exists(dev_file) and os.path.isfile(dev_file))
                     test_present = (os.path.exists(test_file) and os.path.isfile(test_file))
                     if (dev_present):
@@ -93,7 +103,7 @@ if __name__ == '__main__':
     parser.add_argument('-e', "--number_epochs", default='3', type=str, help="the number of epochs the experiment ran for")
     parser.add_argument('-c', "--calcArgs", default='', type=str, help="additional arguments to pass to counter")
 
-    add_argstring = " -rt -et -ei -ti -ic "
+    add_argstring = " -rt -et -ei -ti -ae /home/krise/Documents/masterarbeit/experiment_results/tok_bilinearAtt_lstm_4epoch_refsep_06_02_24/run1/alignmenterrors.txt -ic "
 
     args = parser.parse_args()
     exp_dir = args.directory
