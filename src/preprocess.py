@@ -11,7 +11,7 @@ import copy
 from DRS_parsing.evaluation.clf_referee import check_clf
 from DRS_parsing.evaluation.clf_referee import get_signature
 from uts import write_to_file, write_list_of_lists, get_drss, is_operator, between_quotes, \
-    op_boxes, is_role, read_and_strip_file, drs_string_to_list, filter_drs_doubleComment
+    op_boxes, is_role, read_and_strip_file, drs_string_to_list, filter_out_doubleAlignment
 
 
 def create_arg_parser():
@@ -41,7 +41,7 @@ def create_arg_parser():
     parser.add_argument("-do", "--drss_only", action='store_true',
                         help="Only process DRS file to char-level")
 
-    parser.add_argument("-rt", "--reference_input_token", action='store_true',
+    parser.add_argument("-al", "--keep_alignment", action='store_true',
                         help="Keep the references linking DRS clauses to a token in the natural language input instead of discarding them")
 
     # Parameters that can often be left at default
@@ -237,15 +237,15 @@ class RewriteVariables:
             return self.get_box_var_rel(var)
         return self.get_box_var_abs(var)
 
-    def rewrite_length_three(self, cur_clause, rt = False):
+    def rewrite_length_three(self, cur_clause, keep_alignment = False):
         '''Rewrite clauses of length 3, including, importantly, REFs'''
         # Rewrite first box variable
         first_var = self.get_box_var(cur_clause[0])
-        if rt:
+        if keep_alignment:
             origin_token, charseq_start, charseq_end, = cur_clause[3], cur_clause[4], cur_clause[5]
         # REF is a special case, it introduces a variable for relative renaming
         if cur_clause[1] == 'REF' and self.rtype == "rel":
-            if rt:
+            if keep_alignment:
                 self.new_clauses.append([first_var, cur_clause[1], origin_token, charseq_start, charseq_end])
             else:
                 self.new_clauses.append([first_var, cur_clause[1]])
@@ -253,22 +253,22 @@ class RewriteVariables:
         # item is in op_boxes, so second item is a box
         elif cur_clause[1] in op_boxes:
             second_var = self.get_box_var(cur_clause[2])
-            if rt:
+            if keep_alignment:
                 self.new_clauses.append([first_var, cur_clause[1], second_var, origin_token, charseq_start, charseq_end])
             else:
                 self.new_clauses.append([first_var, cur_clause[1], second_var])
         else:  # Otherwise it is (or should be) a discourse variable
             second_var = self.get_disc_var(cur_clause[2])
-            if rt:
+            if keep_alignment:
                 self.new_clauses.append([first_var, cur_clause[1], second_var, origin_token, charseq_start, charseq_end])
             else:
                 self.new_clauses.append([first_var, cur_clause[1], second_var])
-    def rewrite_length_four(self, cur_clause, rt = False):
+    def rewrite_length_four(self, cur_clause, keep_alignment = False):
         '''Rewrite clauses of length 4, only rewrites, no introductions'''
         first_var = self.get_box_var(cur_clause[0])
         second_var, third_var = cur_clause[2], cur_clause[3]  # defaults
 
-        if rt:
+        if keep_alignment:
             origin_token, charseq_start, charseq_end, = cur_clause[4], cur_clause[5], cur_clause[6]
         # Only rewrite items that are not between quotes (so variables)
         if not between_quotes(cur_clause[2]):
@@ -282,7 +282,7 @@ class RewriteVariables:
                 third_var = self.get_box_var(cur_clause[3])
             else:
                 third_var = self.get_disc_var(cur_clause[3])
-        if rt:
+        if keep_alignment:
             self.new_clauses.append([first_var, cur_clause[1], second_var, third_var, origin_token, charseq_start, charseq_end])
         else:
             self.new_clauses.append([first_var, cur_clause[1], second_var, third_var])
@@ -302,7 +302,7 @@ class RewriteVariables:
                 self.rewrite_length_four(cur_clause, False)
         return self.new_clauses
 
-    def rewrite_variables_rt(self):
+    def rewrite_variables_keep_alignment(self):
         '''Rewrite the variable in a relative manner'''
         # For none, just return the drs (basically do nothing)
         if self.rtype == "none":
@@ -337,7 +337,7 @@ def char_level_drs(new_clauses, sep):
     return return_strings
 
 
-def sanitize_variables(drs, rt = False):
+def sanitize_variables(drs, keep_alignment = False):
     '''Sanitize DRS variables: make sure that variables are not
        introduced twice (happens for t1). If it happens, remove all
        occurences after the second introduction of t1 to t100 (or more)'''
@@ -353,7 +353,7 @@ def sanitize_variables(drs, rt = False):
                 # Save this info, so if we encounter t1 in box b1 again, we can rewrite t1 to t100
                 rewrite_as[(clause[0], clause[2])] = 'x' + str(count)
                 count += 1  # update count for when disc refs are introduced more than twice
-                if rt:
+                if keep_alignment:
                     new_clauses.append([clause[0], clause[1], rewrite_as[(clause[0], clause[2])], clause[3], clause[4], clause[5]])
                 else:
                     new_clauses.append([clause[0], clause[1], rewrite_as[(clause[0], clause[2])]])
@@ -372,14 +372,14 @@ def sanitize_variables(drs, rt = False):
     return new_clauses
 
 
-def word_level_drs(new_clauses, sep, rt = False):
+def word_level_drs(new_clauses, sep, keep_alignment = False):
     '''Return to string-format, keep word-level for concepts'''
     return_strings = []
 
     for cur_clause in new_clauses:
         ret_str = ''
         for i, item in enumerate(cur_clause):
-            if rt:
+            if keep_alignment:
                 if (i == len(cur_clause) - 4):
                     ret_str += ' ' + item + ' % '
                 else:
@@ -424,26 +424,26 @@ def remove_ill_formed_drss(drss, signature_file):
     return new_drss, remove_idxs
 
 
-def rewrite_drss(drss, variable_type, representation, sep, referenceInputToken = False):
+def rewrite_drss(drss, variable_type, representation, sep, keep_alignment = False):
     '''Rewrite all the variables in the DRS to a relative or absolute representation (or do nothing)
        Also put the DRS in the correct format: character of word-level'''
     rewritten_drss, var_drss = [], []
     for drs in drss:
         # Remove comments and split
-        drs = drs_string_to_list(drs, referenceInputToken)
-        if referenceInputToken:
-            drs = filter_drs_doubleComment(drs)
+        drs = drs_string_to_list(drs, keep_alignment)
+        if keep_alignment:
+            drs = filter_out_doubleAlignment(drs)
         # Sanitze DRS variables, sometimes e.g. t1 can be twice introduced by a REF
-        drs = sanitize_variables(drs, rt = referenceInputToken)
+        drs = sanitize_variables(drs, keep_alignment= keep_alignment)
         # Rewrite the variables
-        if referenceInputToken:
-            rewritten_drs = RewriteVariables(drs, variable_type).rewrite_variables_rt()
+        if keep_alignment:
+            rewritten_drs = RewriteVariables(drs, variable_type).rewrite_variables_keep_alignment()
         else:
             rewritten_drs = RewriteVariables(drs, variable_type).rewrite_variables()
 
         var_drss.append([" ".join(x) for x in rewritten_drs])
         # Put in correct representation
-        processed_drs = word_level_drs(rewritten_drs, sep, rt = referenceInputToken) if representation == 'word' \
+        processed_drs = word_level_drs(rewritten_drs, sep, keep_alignment= keep_alignment) if representation == 'word' \
                         else char_level_drs(rewritten_drs, sep)
         # Insert special clause separation character
         rewritten_drss.append(" *** ".join(processed_drs))
@@ -484,12 +484,11 @@ def main():
             write_list_of_lists(drss, args.input_file + args.valid_drs_ext)
 
         # Rewrite the variables and put in char/word level format
-        rewritten_drss, var_drss = rewrite_drss(drss, args.variables, args.representation, args.sep, args.reference_input_token)
-
+        rewritten_drss, var_drss = rewrite_drss(drss, args.variables, args.representation, args.sep, args.keep_alignment)
 
         # Write all output files we want to keep, input to model and human readable var format
-        write_to_file(rewritten_drss, args.input_file + args.char_drs_ext + (".rt" if args.reference_input_token else ""))
-        write_list_of_lists(var_drss, args.input_file + args.var_drs_ext + (".rt" if args.reference_input_token else ""))
+        write_to_file(rewritten_drss, args.input_file + args.char_drs_ext + (".al" if args.keep_alignment else ""))
+        write_list_of_lists(var_drss, args.input_file + args.var_drs_ext + (".al" if args.keep_alignment else ""))
 
     # Print sentences all the way at the end, because we might want to remove certain sents by idx
     # because their DRS was ill-formed (which we don't check until later). Do that check here

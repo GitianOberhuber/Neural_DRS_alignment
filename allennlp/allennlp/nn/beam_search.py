@@ -121,7 +121,7 @@ class BeamSearch:
         # beam to `beam_size`^2 candidates from which we will select the top
         # `beam_size` elements for the next iteration.
         # shape: (batch_size, num_classes)
-        start_class_log_probabilities, state, visAttend = step(start_predictions, start_state, target_tokens, source_tokens, vocab_cust)
+        start_class_log_probabilities, state, attention = step(start_predictions, start_state, target_tokens, source_tokens, vocab_cust)
 
         num_classes = start_class_log_probabilities.size()[1]
 
@@ -164,12 +164,12 @@ class BeamSearch:
                     expand(batch_size, self.beam_size, *last_dims).\
                     reshape(batch_size * self.beam_size, *last_dims)
 
-        visAttends = []
+        attentions = []
         for timestep in range(self.max_steps - 1):
 
             # shape: (batch_size * beam_size,)
             last_predictions = predictions[-1].reshape(batch_size * self.beam_size)
-            #predTokens = replace_with_values_1d(last_prediction, vocab_cust['target'])
+
             # If every predicted token from the last step is `self._end_index`,
             # then we can stop early.
             if (last_predictions == self._end_index).all():
@@ -178,12 +178,12 @@ class BeamSearch:
             # Take a step. This get the predicted log probs of the next classes
             # and updates the state.
             # shape: (batch_size * beam_size, num_classes)
-            class_log_probabilities, state, visAttend = step(last_predictions, state, target_tokens, source_tokens, vocab_cust)
-            visAttends.append(visAttend)
-            #if 'disturbs' in visAttend[0][0] and timestep == 38:
-            #    import pydevd_pycharm
-            #    pydevd_pycharm.settrace('localhost', port=12345, stdoutToServer=True, stderrToServer=True)
-
+            if source_tokens is None or target_tokens is None or vocab_cust is None:
+                class_log_probabilities, state = step(last_predictions, state)
+            else:
+                class_log_probabilities, state, attention = step(last_predictions, state, target_tokens, source_tokens, vocab_cust)
+            if attention:
+                attentions.append(attention)
             # shape: (batch_size * beam_size, num_classes)
             last_predictions_expanded = last_predictions.unsqueeze(-1).expand(
                     batch_size * self.beam_size,
@@ -270,7 +270,7 @@ class BeamSearch:
         # Reconstruct the sequences.
         # shape: [(batch_size, beam_size, 1)]
         reconstructed_predictions = [predictions[-1].unsqueeze(2)]
-        reconstructed_visAttends = []
+        reconstructed_attentions = []
         # shape: (batch_size, beam_size)
         cur_backpointers = backpointers[-1]
         for timestep in range(len(predictions) - 2, 0, -1):
@@ -278,13 +278,13 @@ class BeamSearch:
             cur_preds = predictions[timestep].gather(1, cur_backpointers.type(torch.int64)).unsqueeze(2)
             reconstructed_predictions.append(cur_preds)
 
-
-            cur_attention_tokens = visAttends[timestep][1].copy()
-            cur_attention_weights = visAttends[timestep][2].clone()
-            for i, idx in enumerate(cur_backpointers[0].type(torch.int64)):
-                cur_attention_tokens[i] = visAttends[timestep][1][idx.item()]
-                cur_attention_weights[i, :] = visAttends[timestep][2][idx.item(), :]
-            reconstructed_visAttends.append((visAttends[timestep][0], cur_attention_tokens, cur_attention_weights))
+            if len(attentions) > 0:
+                cur_attention_tokens = attentions[timestep][1].copy()
+                cur_attention_weights = attentions[timestep][2].clone()
+                for i, idx in enumerate(cur_backpointers[0].type(torch.int64)):
+                    cur_attention_tokens[i] = attentions[timestep][1][idx.item()]
+                    cur_attention_weights[i, :] = attentions[timestep][2][idx.item(), :]
+                reconstructed_attentions.append((attentions[timestep][0], cur_attention_tokens, cur_attention_weights))
 
             # shape: (batch_size, beam_size)
             cur_backpointers = backpointers[timestep - 1].gather(1, cur_backpointers.type(torch.int64))
@@ -293,54 +293,43 @@ class BeamSearch:
 
 
         final_preds = predictions[0].gather(1, cur_backpointers.type(torch.int64)).unsqueeze(2)
-        final_attention_weights = visAttends[0][2].clone()
-        final_attention_tokens = visAttends[0][1].copy()
-        for i, idx in enumerate(cur_backpointers[0].type(torch.int64)):
-            final_attention_tokens[i] = visAttends[0][1][idx.item()]
-            final_attention_weights[i, :] = visAttends[0][2][idx.item(), :]
-        reconstructed_visAttends.append((visAttends[0][0], final_attention_tokens, final_attention_weights))
+        if len(attentions) > 0:
+            final_attention_weights = attentions[0][2].clone()
+            final_attention_tokens = attentions[0][1].copy()
+            for i, idx in enumerate(cur_backpointers[0].type(torch.int64)):
+                final_attention_tokens[i] = attentions[0][1][idx.item()]
+                final_attention_weights[i, :] = attentions[0][2][idx.item(), :]
+            reconstructed_attentions.append((attentions[0][0], final_attention_tokens, final_attention_weights))
+            reconstructed_attentions = list(reversed(reconstructed_attentions))
 
         reconstructed_predictions.append(final_preds)
 
         # shape: (batch_size, beam_size, max_steps)
         all_predictions = torch.cat(list(reversed(reconstructed_predictions)), 2)
-        all_visAttend = list(reversed(reconstructed_visAttends))
 
+        index_maxLogProb = torch.argmax(last_log_probabilities.cpu()).item()
+        attendsExplicit = []
+        for tup in reconstructed_attentions:
+            tup = (tup[0], [tup[1][index_maxLogProb]], tup[2][index_maxLogProb, :].unsqueeze(0))
+            attendsExplicit.append(tup)
+        attendsAggregated = []
+        new_output_token_parts = []
+        new_weights = torch.zeros(1, len(reconstructed_attentions[0][0][0]))
 
-        if 1 == 1:
-            import numpy as np
-            import matplotlib.pyplot as plt
-            import seaborn as sns
-
-            index_maxLogProb = torch.argmax(last_log_probabilities.cpu()).item()
-            visAttends1 = []
-            for tup in all_visAttend:
-                tup = (tup[0], [tup[1][index_maxLogProb]], tup[2][index_maxLogProb, :].unsqueeze(0))
-                visAttends1.append(tup)
-            visAttendsAggregated = []
-            new_output_token_parts = []
-            new_weights = torch.zeros(1, len(all_visAttend[0][0][0]))
-
-            for (input_list, output_token_list, tensor) in visAttends1:
-                #if output_token_list[0] == "@start@":
-                #    continue
-                if output_token_list[0] == "***":
-                    new_weights = new_weights / len(new_output_token_parts)
-                    visAttendsAggregated.append((input_list, [' '.join(new_output_token_parts)], new_weights))
-                    new_output_token_parts = []
-                    new_weights = torch.zeros(1, len(visAttends[0][0][0]))
-                else:
-                    new_output_token_parts.append(output_token_list[0])
-                    new_weights += tensor.cpu()
-            new_weights = new_weights / len(new_output_token_parts)
-            visAttendsAggregated.append((input_list, [' '.join(new_output_token_parts)], new_weights))
-
-
-            #heatmap code
+        for (input_list, output_token_list, tensor) in attendsExplicit:
+            if output_token_list[0] == "***":
+                new_weights = new_weights / len(new_output_token_parts)
+                attendsAggregated.append((input_list, [' '.join(new_output_token_parts)], new_weights))
+                new_output_token_parts = []
+                new_weights = torch.zeros(1, len(attentions[0][0][0]))
+            else:
+                new_output_token_parts.append(output_token_list[0])
+                new_weights += tensor.cpu()
+        new_weights = new_weights / len(new_output_token_parts)
+        attendsAggregated.append((input_list, [' '.join(new_output_token_parts)], new_weights))
 
         attention_alignment = []
-        for (input_list, output_token_list, tensor) in visAttendsAggregated:
-            most_mass_token = 'None'
+        for (input_list, output_token_list, tensor) in attendsAggregated:
             tmp_tensor = tensor.clone()
             tmp_tensor[:, 0] = 0
             tmp_tensor[:, tensor.shape[1] - 1] = 0
@@ -353,15 +342,23 @@ class BeamSearch:
             for i in range(argmax_idx.item()):
                 if i != 0:
                     char_count_previous_tokens += len(input_list[0][i])
+
+
             char_count_previous_tokens += (argmax_idx.item() - 1)  # number of whitespaces
             alignment = '% ' + most_mass_token + ' ' + str(char_count_previous_tokens) + ' ' + str(char_count_previous_tokens + len(most_mass_token))
+
             if '%' in output_token_list[0]:
-                output_plus_alignment = output_token_list[0].split('%')[0] + alignment
+                clause = output_token_list[0].split('%')[0]
+                e2e_alignment = output_token_list[0].split('%')[1]
+                if e2e_alignment.strip() == "UNK 0 0":
+                    output_plus_alignment = clause + "% UNK 0 0"
+                else:
+                    output_plus_alignment = clause + alignment
             else:
                 output_plus_alignment = output_token_list[0] + " " + alignment
             attention_alignment.append(output_plus_alignment)
 
-        if 'disturbs' in visAttend[0][0]:
-            import pydevd_pycharm
-            #pydevd_pycharm.settrace('localhost', port=12345, stdoutToServer=True, stderrToServer=True)
+        #import pydevd_pycharm
+        #pydevd_pycharm.settrace('localhost', port=12345, stdoutToServer=True, stderrToServer=True)
+
         return all_predictions, last_log_probabilities, attention_alignment

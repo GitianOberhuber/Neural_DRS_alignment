@@ -135,10 +135,10 @@ def get_drss(f, amr_input=False):
     return all_drss
 
 
-def drs_string_to_list(drs, referenceInputToken = False):
+def drs_string_to_list(drs, keep_alignment = False):
     '''Change a DRS in string format (single list) to a list of lists
        Also remove comments from the DRS'''
-    if referenceInputToken:
+    if keep_alignment:
         drs = [x.replace("%", "", 1).replace("...", " ").replace("[", "").replace("]", "").split() for x in drs if x.strip() and not x.startswith('%')]
         for i, cl in enumerate(drs):
             #insert blank for missing token references
@@ -150,7 +150,7 @@ def drs_string_to_list(drs, referenceInputToken = False):
                else clause.split() for clause in drs]
     return drs
 
-def filter_drs_doubleComment(drs):
+def filter_out_doubleAlignment(drs):
     ''' Some clauses in the DRF refer to more than one token of the original natural language utterance. For the time being, they are
         reduced to only the first. '''
     res = []

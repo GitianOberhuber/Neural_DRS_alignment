@@ -1,5 +1,4 @@
 from typing import Tuple, Dict, Optional
-
 from overrides import overrides
 
 import torch
@@ -69,15 +68,22 @@ class LstmCellDecoderNet(DecoderNet):
         encoder_outputs_mask = encoder_outputs_mask.float()
 
         # shape: (batch_size, max_input_sequence_length)
-        input_weights, visAttend = self._attention(decoder_hidden_state,
-                                        encoder_outputs,
-                                        encoder_outputs_mask,
-                                        source_tokens, target_tokens, vocab_cust, last_prediction)
-
-        # shape: (batch_size, encoder_output_dim)
-        attended_input = util.weighted_sum(encoder_outputs, input_weights)
-
-        return attended_input, visAttend
+        if source_tokens is None or target_tokens is None or vocab_cust is None:
+            input_weights = self._attention(decoder_hidden_state,
+                                                       encoder_outputs,
+                                                       encoder_outputs_mask,
+                                                       source_tokens, target_tokens, vocab_cust, last_prediction)
+            # shape: (batch_size, encoder_output_dim)
+            attended_input = util.weighted_sum(encoder_outputs, input_weights)
+            return input_weights
+        else:
+            input_weights, attention = self._attention(decoder_hidden_state,
+                                            encoder_outputs,
+                                            encoder_outputs_mask,
+                                            source_tokens, target_tokens, vocab_cust, last_prediction)
+            # shape: (batch_size, encoder_output_dim)
+            attended_input = util.weighted_sum(encoder_outputs, input_weights)
+            return attended_input, attention
 
     def init_decoder_state(self, encoder_out: Dict[str, torch.LongTensor], extra_enc_layer=None) -> Dict[str, torch.Tensor]:
 
@@ -114,8 +120,13 @@ class LstmCellDecoderNet(DecoderNet):
         last_predictions_embedding = previous_steps_predictions[:, -1]
 
         if self._attention:
-            # shape: (group_size, encoder_output_dim)
-            attended_input, visAttend = self._prepare_attended_input(decoder_hidden, encoder_outputs, source_mask, source_tokens, target_tokens, vocab_cust, last_prediction)
+
+            if source_tokens is None or target_tokens is None or vocab_cust is None:
+                # shape: (group_size, encoder_output_dim)
+                attended_input = self._prepare_attended_input(decoder_hidden, encoder_outputs, source_mask, source_tokens, target_tokens, vocab_cust, last_prediction)
+            else:
+                # shape: (group_size, encoder_output_dim)
+                attended_input, attention = self._prepare_attended_input(decoder_hidden, encoder_outputs, source_mask, source_tokens, target_tokens, vocab_cust, last_prediction)
             # shape: (group_size, decoder_output_dim + target_embedding_dim)
             decoder_input = torch.cat((attended_input, last_predictions_embedding), -1)
         else:
@@ -126,5 +137,7 @@ class LstmCellDecoderNet(DecoderNet):
         # shape (decoder_context): (batch_size, decoder_output_dim)
         decoder_hidden, decoder_context = self._decoder_cell(decoder_input,
                                                              (decoder_hidden, decoder_context))
-
-        return {"decoder_hidden": decoder_hidden, "decoder_context": decoder_context}, decoder_hidden, visAttend
+        if attention is None:
+            return {"decoder_hidden": decoder_hidden, "decoder_context": decoder_context}, decoder_hidden
+        else:
+            return {"decoder_hidden": decoder_hidden, "decoder_context": decoder_context}, decoder_hidden, attention

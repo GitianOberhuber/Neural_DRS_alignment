@@ -461,6 +461,7 @@ def tokenRef_match(clause_prod, clause_gold, match_token_idxs = True, match_toke
 		else:
 			return False
 	else:
+		#print("ding dong, you are wrong")
 		return False
 
 def get_alignment(clause_prod, clause_gold):

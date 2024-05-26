@@ -260,10 +260,7 @@ class Trainer(TrainerBase):
             assert len(batch_group) == 1
             batch = batch_group[0]
             batch = nn_util.move_to_device(batch, self._cuda_devices[0])
-            #for item in batch:
-                #print ("batch key", item)
-            #print (batch)
-            output_dict, visAttend = self.model(**batch)
+            output_dict = self.model(**batch)
 
         try:
             loss = output_dict["loss"]

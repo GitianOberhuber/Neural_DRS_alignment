@@ -1,6 +1,5 @@
 import string
 from typing import Dict, List, Tuple, Optional
-
 from overrides import overrides
 
 import numpy
@@ -226,13 +225,15 @@ class AutoRegressiveSeqDecoder(SeqDecoder):
                         # shape: (batch_size, steps, target_embedding_dim)
                         state["previous_steps_predictions"] = target_embedding[:, :timestep]
 
-                # shape: (batch_size, num_classes)
-                output_projections, state, visAttend = self._prepare_output_projections(
-                    effective_last_prediction, state, source_tokens, target_tokens, vocab_cust
-                )
-                #visAttends.append(visAttend)
-                #if 'post' in visAttends[0][0][0]:
-
+                if source_tokens is None or target_tokens is None or vocab_cust is None:
+                    # shape: (batch_size, num_classes)
+                    output_projections, state = self._prepare_output_projections(
+                        effective_last_prediction, state)
+                else:
+                    # shape: (batch_size, num_classes)
+                    output_projections, state, attention = self._prepare_output_projections(
+                        effective_last_prediction, state, source_tokens, target_tokens, vocab_cust
+                    )
 
                 # list of tensors, shape: (batch_size, 1, num_classes)
                 step_logits.append(output_projections.unsqueeze(1))
@@ -301,15 +302,24 @@ class AutoRegressiveSeqDecoder(SeqDecoder):
                 [previous_steps_predictions, last_predictions_embeddings], 1
             )
 
-        decoder_state, decoder_output, visAttend = self._decoder_net(
-            previous_state=state,
-            encoder_outputs=encoder_outputs,
-            source_mask=source_mask,
-            previous_steps_predictions=previous_steps_predictions,
-            source_tokens = source_tokens,
-            target_tokens = target_tokens,
-            vocab_cust = vocab_cust,
-            last_prediction = last_predictions,
+        if source_tokens is None or target_tokens is None or vocab_cust is None:
+            decoder_state, decoder_output = self._decoder_net(
+                previous_state=state,
+                encoder_outputs=encoder_outputs,
+                source_mask=source_mask,
+                previous_steps_predictions=previous_steps_predictions,
+                last_prediction=last_predictions,
+            )
+        else:
+            decoder_state, decoder_output, attend = self._decoder_net(
+                previous_state=state,
+                encoder_outputs=encoder_outputs,
+                source_mask=source_mask,
+                previous_steps_predictions=previous_steps_predictions,
+                source_tokens = source_tokens,
+                target_tokens = target_tokens,
+                vocab_cust = vocab_cust,
+                last_prediction = last_predictions,
         )
         state["previous_steps_predictions"] = previous_steps_predictions
 
@@ -321,8 +331,11 @@ class AutoRegressiveSeqDecoder(SeqDecoder):
 
         # shape: (group_size, num_classes)
         output_projections = self._output_projection_layer(decoder_output)
+        if attend:
+            return output_projections, state, attend
+        else:
+            return output_projections, state
 
-        return output_projections, state, visAttend
 
     def _get_loss(
         self, logits: torch.LongTensor, targets: torch.LongTensor, target_mask: torch.LongTensor
@@ -391,13 +404,19 @@ class AutoRegressiveSeqDecoder(SeqDecoder):
             equal to `batch_size`, since the group may contain multiple states
             for each source sentence in the batch.
         """
-        # shape: (group_size, num_classes)
-        output_projections, state, visAttend = self._prepare_output_projections(last_predictions, state, source_tokens, target_tokens, vocab_cust)
+        if source_tokens is None or target_tokens is None or vocab_cust is None:
+            # shape: (group_size, num_classes)
+            output_projections, state = self._prepare_output_projections(last_predictions, state)
+        else:
+            # shape: (group_size, num_classes)
+            output_projections, state, attend = self._prepare_output_projections(last_predictions, state, source_tokens, target_tokens, vocab_cust)
 
         # shape: (group_size, num_classes)
         class_log_probabilities = F.log_softmax(output_projections, dim=-1)
-
-        return class_log_probabilities, state, visAttend
+        if attend:
+            return class_log_probabilities, state, attend
+        else:
+            return class_log_probabilities, state
 
     @overrides
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:
@@ -423,7 +442,7 @@ class AutoRegressiveSeqDecoder(SeqDecoder):
         state.update(decoder_init_state)
         if target_tokens:
             state_forward_loss = state if self.training else {k: v.clone() for k, v in state.items()}
-            output_dict, visAttend = self._forward_loss(state_forward_loss, target_tokens, source_tokens, vocab_cust)
+            output_dict, attend = self._forward_loss(state_forward_loss, target_tokens, source_tokens, vocab_cust)
         else:
             output_dict = {}
 
@@ -451,7 +470,7 @@ class AutoRegressiveSeqDecoder(SeqDecoder):
                         self.indices_to_tokens(target_tokens["tokens"][self._target_namespace][:, 1:]),
                     )
 
-        return output_dict, visAttend
+        return output_dict
 
     @overrides
     def post_process(self, output_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
@@ -460,40 +479,36 @@ class AutoRegressiveSeqDecoder(SeqDecoder):
         corresponding tokens, and adds a field called `predicted_tokens` to the `output_dict`.
         """
 
-        predicted_indices = output_dict[0]["predictions"]
+        predicted_indices = output_dict["predictions"]
         all_predicted_tokens = self.indices_to_tokens(predicted_indices)
-        if "disturbs" in all_predicted_tokens[0] or "disturb" in all_predicted_tokens[0] or "disturbed" in all_predicted_tokens[0]:
-            import pydevd_pycharm
-            #pydevd_pycharm.settrace('localhost', port=12345, stdoutToServer=True, stderrToServer=True)
-            #if 'attention_alignment' in output_dict[0].keys():
-            #    self.post_process_alignment(output_dict[0]["attention_alignment"], 0)
-        output_dict[0]["predicted_tokens"] = all_predicted_tokens
+        output_dict["predicted_tokens"] = all_predicted_tokens
         return output_dict
 
-    def post_process_alignment(self, visAttends, idx) -> List[List[str]]:
-        index_maxLogProb = idx #torch.argmax(last_log_probabilities.cpu()).item()
-        visAttends1 = []
-        for tup in visAttends:
+    def post_process_alignment(self, attends, idx) -> List[List[str]]:
+        index_maxLogProb = idx
+        attendsExplicit = []
+        for tup in attends:
             tup = (tup[0], [tup[1][index_maxLogProb]], tup[2][index_maxLogProb, :].unsqueeze(0))
-            visAttends1.append(tup)
-        visAttendsAggregated = []
+            attendsExplicit.append(tup)
+        attendsAggregated = []
         new_output_token_parts = []
-        new_weights = torch.zeros(1, len(visAttends[0][0][0]))
+        new_weights = torch.zeros(1, len(attends[0][0][0]))
 
-        for (input_list, output_token_list, tensor) in visAttends1:
+        for (input_list, output_token_list, tensor) in attendsExplicit:
             if output_token_list[0] == "***":
                 new_weights = new_weights / len(new_output_token_parts)
-                visAttendsAggregated.append((input_list, [' '.join(new_output_token_parts)], new_weights))
+                attendsAggregated.append((input_list, [' '.join(new_output_token_parts)], new_weights))
                 new_output_token_parts = []
-                new_weights = torch.zeros(1, len(visAttends[0][0][0]))
+                new_weights = torch.zeros(1, len(attends[0][0][0]))
             else:
                 new_output_token_parts.append(output_token_list[0])
                 new_weights += tensor.cpu()
         new_weights = new_weights / len(new_output_token_parts)
-        visAttendsAggregated.append((input_list, [' '.join(new_output_token_parts)], new_weights))
+        attendsAggregated.append((input_list, [' '.join(new_output_token_parts)], new_weights))
 
         attention_alignment = []
-        for (input_list, output_token_list, tensor) in visAttendsAggregated:
+
+        for (input_list, output_token_list, tensor) in attendsAggregated:
             most_mass_token = 'None'
             tmp_tensor = tensor.clone()
             tmp_tensor[:, 0] = 0

@@ -22,6 +22,7 @@ fi
 cp -u -R Neural_DRS_patch/src .
 cp -u -R Neural_DRS_patch/DRS_parsing .
 cp -u -R Neural_DRS_patch/config .
+cp -u -R Neural_DRS_patch/allennlp .
 
 
 

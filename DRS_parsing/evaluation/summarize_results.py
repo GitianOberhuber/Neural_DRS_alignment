@@ -13,25 +13,17 @@ def read_f1_from_file(filepath):
 
     return None
 
-def fancyPrint(res_list):
+def fancyPrint(res_list, full_res):
     if not res_list is None and not len(res_list) == 0:
         print("-------- F-Score ---------")
-        print("F-score, DRS only : {0}".format(round(res_list[0], 4)))
-        print("F-score, alignment token : {0}".format(round(res_list[1], 4)))
-        print("F-score, alignment indices : {0}".format(round(res_list[3], 4)))
-        print("F-score, alignment full : {0}".format(round(res_list[2], 4)))
+        print("F-score, DRS only: {0} {{{1}}}".format(round(res_list[0], 4), ', '.join(map(str, [res[0] for res in full_res]))))
+        print("F-score, alignment also correct : {0} {{{1}}}".format(round(res_list[1], 4), ', '.join(map(str, [res[1] for res in full_res]))))
         print("-------- Alignment Accuracy ---------")
-        print("Alignment Accuracy token: {0}".format(round(res_list[4], 3)))
-        print("Alignment Accuracy token for fully correct DRS: {0}".format(round(res_list[5], 3)))
-        print("Alignment Accuracy indices: {0}".format(round(res_list[8], 3)))
-        print("Alignment Accuracy indices for fully correct DRS: {0}".format(round(res_list[9], 3)))
-        print("Alignment Accuracy full: {0}".format(round(res_list[6], 3)))
-        print("Alignment Accuracy full for fully correct DRS: {0}".format(round(res_list[7], 3)))
+        print("Alignment Accuracy: {0} {{{1}}}".format(round(res_list[4], 3), ', '.join(map(str, [res[4] for res in full_res]))))
+        print("Alignment Accuracy token for fully correct DRS: {0} {{{1}}}".format(round(res_list[5], 3), ', '.join(map(str, [res[5] for res in full_res]))))
         print("-------- Counts ---------")
         print("Fully Correct DRS: {0} out of {1} ({2}%)".format(round(res_list[13], 3), round(res_list[14], 3), round(res_list[13] / res_list[14]* 100), 3 ) )
-        print("Count Alignment Errors token: {0}".format(round(res_list[10], 3)))
-        print("Count Alignment Errors indices: {0}".format(round(res_list[12], 3)))
-        print("Count Alignment Errors full: {0}".format(round(res_list[11], 3)))
+        print("Count Alignment Errors: {0}".format(round(res_list[10], 3)))
 
 
 def sum_lists_elementwise(lists, num_runs):
@@ -63,16 +55,16 @@ def average_fine_tuned(tune_dir, calc_from_output = False):
                     test_present = (os.path.exists(test_file) and os.path.isfile(test_file))
                     if (dev_present):
                         args_str = '-f1 {} -f2 {} -g {}'.format(dev_file, os.path.join(d2, "dev.txt"), d3)
-                        if "tok" in args_str and "nontok" not in args_str:
-                            args_str = args_str + add_argstring
+                        #if "tok" in args_str and "nontok" not in args_str:
+                        args_str = args_str + add_argstring
                         args = counter.build_arg_parser(args_str)
                         #dev_f1 += counter.main(args, verbose=False)[2]
                         dev_results.append(counter.main(args, verbose=False))
                         dev_num += 1
                     if (test_present):
                         args_str = '-f1 {} -f2 {} -g {}'.format(test_file, os.path.join(d2, "test.txt"), d3)
-                        if "tok" in args_str and "nontok" not in args_str:
-                            args_str = args_str + add_argstring
+                        #if "tok" in args_str and "nontok" not in args_str:
+                        args_str = args_str + add_argstring
                         args = counter.build_arg_parser(args_str)
                         #test_f1 += counter.main(args, verbose=False)[2]
                         test_results.append(counter.main(args, verbose=False))
@@ -92,7 +84,7 @@ def average_fine_tuned(tune_dir, calc_from_output = False):
                         test_num +=1
     print(dev_results)
     print(test_results)
-    return sum_lists_elementwise(dev_results, dev_num), sum_lists_elementwise(test_results, test_num)
+    return dev_results, dev_num, test_results, test_num
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -103,7 +95,7 @@ if __name__ == '__main__':
     parser.add_argument('-e', "--number_epochs", default='3', type=str, help="the number of epochs the experiment ran for")
     parser.add_argument('-c', "--calcArgs", default='', type=str, help="additional arguments to pass to counter")
 
-    add_argstring = " -rt -et -ei -ti -ae /home/krise/Documents/masterarbeit/experiment_results/tok_bilinearAtt_lstm_4epoch_refsep_06_02_24/run1/alignmenterrors.txt -ic "
+
 
     args = parser.parse_args()
     exp_dir = args.directory
@@ -111,6 +103,11 @@ if __name__ == '__main__':
     d2 = args.goldlabels
     d3 = args.clf_signature
     epochs = args.number_epochs
+
+    #add_argstring = " -rt -et -ei -ti -ae //home/krise/Documents/masterarbeit/experiment_results/secondnew_tok/run1/alignmenterrors.txt -ic"
+    add_argstring = " -rt -et -ei -ti -ae /home/krise/Documents/masterarbeit/experiment_results/tok_bilinearAtt_lstm_4epoch_refsep_06_02_24_cpy/run1/alignmenterrors.txt"
+
+    print(add_argstring)
 
     if (exp_dir == "" and d1 == "" and d2 == "") or (not exp_dir == "" and not (d1 == "" and d2 == "")):
         print("Either -d or -d1 + -d2 options must be specified!")
@@ -149,7 +146,9 @@ if __name__ == '__main__':
             print(read_f1_from_file(test_file))
 
         if fine_tuned_present:
-            finetune_dev, finetune_test = average_fine_tuned(finetuned_dir)
+            dev_results, num_dev, test_results, num_test = average_fine_tuned(finetuned_dir)
+            finetune_dev = sum_lists_elementwise(dev_results, num_dev)
+            finetune_test = sum_lists_elementwise(test_results, num_test)
             print("Fine-tuned, averaged, dev-set:")
             print(round(finetune_dev, 3))
             print("Fine-tuned, averaged, test-set:")
@@ -179,10 +178,12 @@ if __name__ == '__main__':
         fine_tuned_present = os.path.exists(finetuned_dir) and os.path.isdir(finetuned_dir)
 
         if fine_tuned_present:
-            finetune_dev, finetune_test = average_fine_tuned(finetuned_dir, calc_from_output = True)
+            dev_results, num_dev, test_results, num_test =average_fine_tuned(finetuned_dir, calc_from_output = True)
+            finetune_dev = sum_lists_elementwise(dev_results, num_dev)
+            finetune_test = sum_lists_elementwise(test_results, num_test)
             print("Dev-Set:")
-            fancyPrint(finetune_dev)
+            fancyPrint(finetune_dev, dev_results)
             print("\n")
             print("Test-Set")
-            fancyPrint(finetune_test)
+            fancyPrint(finetune_test, test_results)
 

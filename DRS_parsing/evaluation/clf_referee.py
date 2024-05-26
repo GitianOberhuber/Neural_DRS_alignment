@@ -43,7 +43,7 @@ def parse_arguments():
 
 
 #################################
-def check_clf(clf, signature, v=0, rt = False):
+def check_clf(clf, signature, v=0, alignment = False):
     '''checks well-formedness of a clausal form
        It returns fine-grained information about the CLF and its DRS:
        * main_box subordinates all the boxes, i.e. all boxes are accessible for it
@@ -54,12 +54,12 @@ def check_clf(clf, signature, v=0, rt = False):
     '''
     # get argument typing and for each clause an operator type
 
-    (op_types, arg_typing) = clf_typing(clf, signature, v=v, rt = rt)
+    (op_types, arg_typing) = clf_typing(clf, signature, v=v, rt = alignment)
     # make all terms, i.e., of unresolved term types, variables (strict mode)
     for term, type in arg_typing.items():
         if type == 't': arg_typing[term] = 'x'
     # get dictionary of box objects. presupp_rel is a subset of disc_rel
-    (box_dict, disc_rels, presupp_rels) = clf_to_box_dict(clf, op_types, arg_typing, v=v, rt = rt)
+    (box_dict, disc_rels, presupp_rels) = clf_to_box_dict(clf, op_types, arg_typing, v=v, rt = alignment)
     if v>=2: print("#boxes = {}".format(len(box_dict)))
     if v>=3:
         for b in box_dict:
@@ -480,7 +480,10 @@ def clf_to_box_dict(clf, op_types, arg_typing, v=0, rt = False):
             continue
         # clause for a condition with Role predicate
         if op_type in ['ROL']:
-            (b, op, t1, t2) = cl
+            try:
+                (b, op, t1, t2) = cl
+            except:
+                print(1)
             assert arg_typing[b] == 'b' and unify_types(arg_typing[t1], 't') and unify_types(arg_typing[t2], 't')
             if v >=4: print("Adding {} to {} as {}".format(cl, b, op_type))
             #pr_box(Box(b), indent=10)
@@ -658,6 +661,14 @@ def non_subordinating_boxes(box_dict, sub_rel, v=0):
 if __name__ == '__main__':
     args = parse_arguments()
 
+    if os.path.exists("/home/krise/Documents/masterarbeit/experiment_results/tok_bilinearAtt_lstm_4epoch_refsep_06_02_24/run1/pp_debug.txt"):
+        # If the file exists, just open it
+        f = open("/home/krise/Documents/masterarbeit/experiment_results/tok_bilinearAtt_lstm_4epoch_refsep_06_02_24/run1/pp_debug.txt", 'r+')
+    else:
+        # If the file doesn't exist, create it and then open it
+        f = open("/home/krise/Documents/masterarbeit/experiment_results/tok_bilinearAtt_lstm_4epoch_refsep_06_02_24/run1/pp_debug.txt", 'w+')
+
+
     # read clausal forms and raw from the file
     (clfs, raws) = file_to_clfs(args.src, v=args.v)
     assert len(clfs) == len(raws),\
@@ -680,7 +691,7 @@ if __name__ == '__main__':
         counter_prog(i, v=args.v)
         if args.v >= 2 and raws: print(' "{}"'.format(raws[i-1]))
         try:
-            (box_dict, subs, _, op_types) = check_clf(clf, signature, v=args.v, rt = args.reference_input_token)
+            (box_dict, subs, _, op_types) = check_clf(clf, signature, v=args.v, alignment= args.reference_input_token)
             op_type_counter.update(op_types)
         except RuntimeError as e:
             if not args.quiet: raise

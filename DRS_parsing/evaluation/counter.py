@@ -49,7 +49,7 @@ import multiprocessing
 from multiprocessing import Pool
 import json #reading in dict
 
-from src.uts import drs_string_to_list, filter_drs_doubleComment
+from src.uts import drs_string_to_list, filter_out_doubleAlignment
 
 try:
 	import cPickle as pickle
@@ -252,9 +252,7 @@ def get_clauses(file_name, signature, ill_type, rt = False, include_REF = False,
 				if read_nl_sentences and line.strip().startswith('%%%'):
 					count_percent_sign += 1
 					if count_percent_sign % 3 == 0: #read every third comment instead of discarding
-						input_sequence = line.replace("%%% ", "").replace("ø ", "")
-						if input_sequence is None or input_sequence == "":
-							print(1)
+						input_sequence = line.replace("%%% ", "").replace("ø ", "").replace("~", " ")
 						count_percent_sign = 0
 				else:
 					pass
@@ -264,7 +262,7 @@ def get_clauses(file_name, signature, ill_type, rt = False, include_REF = False,
 					# First check if the DRS is valid, will error if invalid
 					try:
 						#f = drs_string_to_list(cur_clauses, rt)
-						check_clf([tuple(c) for c in cur_clauses], signature, v=False, rt = rt)
+						check_clf([tuple(c) for c in cur_clauses], signature, v=False, alignment= rt)
 						clause_list.append(cur_clauses)
 						original_clauses.append(cur_orig)
 						if read_nl_sentences:
@@ -291,7 +289,7 @@ def get_clauses(file_name, signature, ill_type, rt = False, include_REF = False,
 			else:
 				if rt:
 					tmp = drs_string_to_list([line], rt)
-					tmp = filter_drs_doubleComment(tmp)
+					tmp = filter_out_doubleAlignment(tmp)
 					tmp[0].insert(-3, '%')
 					cur_clauses.append(tmp[0])
 
@@ -524,6 +522,7 @@ def get_matching_clauses(arg_list, incorrect_alignments_file = None, incorrect_a
 		print('Skip calculation of DRS, more clauses than max of {0}'.format(args.max_clauses))
 		return 'skip'
 
+	len_incorrect_alignments = 0
 	if args.stats: #only do stats
 		return [0, prod_drs.total_clauses, gold_drs.total_clauses, [], 0, 0, 0, len(prod_drs.var_map)]  # only care about clauses and var count, skip calculations
 	else:
@@ -535,6 +534,7 @@ def get_matching_clauses(arg_list, incorrect_alignments_file = None, incorrect_a
 			incorrect_alignments = filter_matching_clauspairs_by_alignment(clause_pairs, alignment, ignore_casing = args.evaluate_token_ignore_casing, match_tokenIdxs = False,
                                                         match_roughly= args.match_roughly, return_incorrect= True, input_sequences = input_sequence)
 			if len(incorrect_alignments) > 0:
+				len_incorrect_alignments = len(incorrect_alignments)
 				incorrect_alignments_file.write("\nSentence: " + input_sequence)
 				incorrect_alignments_file.write("\n" +  "Prec, Rec, F-score: " + str(precision) + ", " + str(recall) + ", " + str(best_f_score))
 				incorrect_alignments_file.write("\n\n")
@@ -598,7 +598,7 @@ def get_matching_clauses(arg_list, incorrect_alignments_file = None, incorrect_a
 		if args.ms and not single:
 			print_results([[best_match_num, prod_drs.total_clauses, gold_drs.total_clauses, smart_fscores, found_idx, match_division, prod_clause_division, gold_clause_division, len(prod_drs.var_map), idv_dict]],
 						  False, start_time, single, args)
-		return [best_match_num, prod_drs.total_clauses, gold_drs.total_clauses, smart_fscores, found_idx, match_division, prod_clause_division, gold_clause_division, len(prod_drs.var_map), idv_dict, best_match_num_correct_alignment_token, best_match_num_correct_alignment_full, best_match_num_correct_alignment_idxs, len(incorrect_alignments)]
+		return [best_match_num, prod_drs.total_clauses, gold_drs.total_clauses, smart_fscores, found_idx, match_division, prod_clause_division, gold_clause_division, len(prod_drs.var_map), idv_dict, best_match_num_correct_alignment_token, best_match_num_correct_alignment_full, best_match_num_correct_alignment_idxs, len_incorrect_alignments]
 
 def filter_matching_clauspairs_by_alignment(clause_pairs, alignment, ignore_casing = False, match_alignmentToken = True, match_tokenIdxs = True, match_roughly = False,
 											return_incorrect = False, input_sequences = None):
@@ -682,11 +682,10 @@ def rough_tokenMatch(token_prod, token_gold, check_using_inclusion = False, inpu
 	if synonyms1.intersection(synonyms2):
 		return True
 	'''
-	if (token_prod == token_gold and token_prod != 'unk' and token_gold != 'unk')  or ('~' in token_gold and '~' not in token_prod and token_prod in token_gold.split('~')):
-		return True
-	else:
-		best_match = find_best_match_editdistance(token_prod, input_sequences)
-		return best_match == token_gold
+	if token_prod == 'unk':
+		return token_prod == token_gold
+	best_match = find_best_match_editdistance(token_prod, input_sequences)
+	return best_match == token_gold or (check_using_inclusion and best_match in token_gold)
 
 
 def find_best_match_editdistance(token_prod, input_sequences):
@@ -715,6 +714,10 @@ def print_results(res_list, no_print, start_time, single, args, verbose = True):
 	total_match_num_correct_drs_correct_alignment_token = sum(x[10] for x in res_list if x[0] == x[1] == x[2])
 	total_match_num_correct_drs_correct_alignment_full = sum(x[11] for x in res_list if x[0] == x[1] == x[2])
 	total_match_num_correct_drs_correct_alignment_idx = sum(x[12] for x in res_list if x[0] == x[1] == x[2])
+
+	num_clauses_gold = [x[2] for x in res_list if x[0] == x[1] == x[2]]
+	num_clauses_gold_correct_drs = [x[2] for x in res_list if x[0] == x[1] == x[2]]
+
 
 	total_test_num = sum([x[1] for x in res_list if x])
 	total_gold_num = sum([x[2] for x in res_list if x])
@@ -808,7 +811,7 @@ def print_results(res_list, no_print, start_time, single, args, verbose = True):
 
 	if verbose:
 		print('Total processing time: {0} sec'.format(runtime))
-	return [best_f_score, best_f_score_align_token, best_f_score_align_full, best_f_score_align_idx, alignment_accuracy_token, alignment_accuracy_fully_correct_token, alignment_accuracy_full, alignment_accuracy_fully_correct_full, alignment_accuracy_idx, alignment_accuracy_fully_correct_idx, count_alignment_errors_token_only, count_alignment_errors_token_and_indices, count_alignment_errors_indices_only, count_fully_correct_drs, len(res_list)]
+	return [best_f_score, best_f_score_align_token, best_f_score_align_full, best_f_score_align_idx, alignment_accuracy_token, alignment_accuracy_fully_correct_token, alignment_accuracy_full, alignment_accuracy_fully_correct_full, alignment_accuracy_idx, alignment_accuracy_fully_correct_idx, count_alignment_errors_token_only, count_alignment_errors_token_and_indices, count_alignment_errors_indices_only, count_fully_correct_drs, len(res_list), num_clauses_gold, num_clauses_gold_correct_drs]
 
 
 def check_input(clauses_prod_list, original_prod, original_gold, clauses_gold_list, baseline, f1, max_clauses, single, verbose = False):

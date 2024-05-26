@@ -69,7 +69,7 @@ class AveragedLstmCellDecoderNet(DecoderNet):
         encoder_outputs_mask = encoder_outputs_mask.float()
 
         # shape: (batch_size, max_input_sequence_length)
-        input_weights, visAttend = self._attention(decoder_hidden_state,
+        input_weights, attention = self._attention(decoder_hidden_state,
                                         encoder_outputs,
                                         encoder_outputs_mask,
                                         source_tokens, target_tokens, vocab_cust, last_prediction)
@@ -77,7 +77,7 @@ class AveragedLstmCellDecoderNet(DecoderNet):
         # shape: (batch_size, encoder_output_dim)
         attended_input = util.weighted_sum(encoder_outputs, input_weights)
 
-        return attended_input, visAttend
+        return attended_input, attention
 
     def init_decoder_state(self, encoder_out: Dict[str, torch.LongTensor], extra_enc_layer=None) -> Dict[str, torch.Tensor]:
 
@@ -89,7 +89,6 @@ class AveragedLstmCellDecoderNet(DecoderNet):
         final_encoder_output = util.get_averaged_encoder_states(encoder_out["encoder_outputs"],
                                                              encoder_out["source_mask"],
                                                              bidirectional=self._bidirectional_input)
-
         # Add extra layer
         final_encoder_output = extra_enc_layer(final_encoder_output)
         return {
@@ -117,7 +116,7 @@ class AveragedLstmCellDecoderNet(DecoderNet):
 
         if self._attention:
             # shape: (group_size, encoder_output_dim)
-            attended_input, visAttend = self._prepare_attended_input(decoder_hidden, encoder_outputs, source_mask,
+            attended_input, attention = self._prepare_attended_input(decoder_hidden, encoder_outputs, source_mask,
                                                           source_tokens, target_tokens, vocab_cust, last_prediction)
 
             # shape: (group_size, decoder_output_dim + target_embedding_dim)
@@ -130,4 +129,4 @@ class AveragedLstmCellDecoderNet(DecoderNet):
         # shape (decoder_context): (batch_size, decoder_output_dim)
         decoder_hidden, decoder_context = self._decoder_cell(decoder_input,
                                                              (decoder_hidden, decoder_context))
-        return {"decoder_hidden": decoder_hidden, "decoder_context": decoder_context}, decoder_hidden, visAttend
+        return {"decoder_hidden": decoder_hidden, "decoder_context": decoder_context}, decoder_hidden, attention

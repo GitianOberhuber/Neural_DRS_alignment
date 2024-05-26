@@ -107,7 +107,6 @@ class ComposedSeq2Seq(Model):
             The output tensors from the decoder.
         """
         # Make sure that we encode the features separately if we do two encoders
-
         final_state = {}
         keep_enc = {}
         for key in source_tokens:
@@ -126,9 +125,7 @@ class ComposedSeq2Seq(Model):
         # Finally do token encoding
         tok_state = self._encode(keep_enc)
         final_state.update(tok_state)
-
-        stuff = self._decoder(final_state, target_tokens, self.vocab._index_to_token, source_tokens)
-        return stuff
+        return self._decoder(final_state, target_tokens, self.vocab._index_to_token, source_tokens)
 
     @overrides
     def decode(self, output_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:

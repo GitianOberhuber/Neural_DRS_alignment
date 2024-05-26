@@ -10,17 +10,18 @@ from allennlp.common.registrable import Registrable
 from allennlp.nn.util import masked_softmax
 
 
-def replace_with_values(tensor, vocab_dict):
+def replace_indices_with_tokens_from_vocab(tensor, vocab_dict):
     if isinstance(tensor, torch.Tensor) and tensor.is_cuda:
         tensor = tensor.cpu().numpy()
     return [[vocab_dict[key].replace("#", "") for key in row] for row in tensor]
 
-def replace_with_values_1d(tensor, vocab_dict):
+def replace_indices_with_tokens_from_vocab_1d(tensor, vocab_dict):
     if isinstance(tensor, torch.Tensor) and tensor.is_cuda:
         tensor = tensor.cpu().numpy()
     return [[vocab_dict[key].replace("#", "") for key in tensor]]
 
-def unwordpiece_tokens(tensor, offsets2d, vocab):
+#re-assemble BERT-wordpieces to full tokens
+def unwordpiece_bert_tokens(tensor, offsets2d, vocab):
     res = []
     for x, offsets in enumerate(offsets2d.cpu().numpy()):
         subres = []
@@ -39,7 +40,7 @@ def unwordpiece_tokens(tensor, offsets2d, vocab):
             subres.append(subsubres)
         stringRes = []
         for r in subres:
-            stringRes.append("".join(replace_with_values(r, vocab)[0]))
+            stringRes.append("".join(replace_indices_with_tokens_from_vocab(r, vocab)[0]))
         res.append(stringRes)
     return res
 
@@ -74,34 +75,26 @@ class Attention(torch.nn.Module, Registrable):
         self._normalize = normalize
 
     @overrides
-    def forward(self,  # pylint: disable=arguments-differ
+    def forward(self,
                 vector: torch.Tensor,
                 matrix: torch.Tensor,
                 matrix_mask: torch.Tensor = None,
                 source_tokens = None, target_tokens = None, vocab_cust = None, last_prediction = None) -> torch.Tensor:
 
 
+
         similarities = self._forward_internal(vector, matrix)
-
-
-        #nl_sents = replace_with_values(source_tokens['bert'], vocab_cust['bert'])
-        #for sent in nl_sents:
-        #    if all(word in sent for word in ['you', 'won', 'many', 'competitions']):
-        #        drs = replace_with_values(target_tokens['target'], vocab_cust['target'])
-
         if self._normalize:
+
             softmax_sims = masked_softmax(similarities, matrix_mask)
             if source_tokens is None or target_tokens is None or vocab_cust is None:
-                return softmax_sims, None
+                return softmax_sims
             else:
-                inputSeq = unwordpiece_tokens(source_tokens['bert'], source_tokens['bert-offsets'], vocab_cust['bert'])
+                inputSeq = unwordpiece_bert_tokens(source_tokens['bert'], source_tokens['bert-offsets'], vocab_cust['bert'])
+                predTokens = replace_indices_with_tokens_from_vocab_1d(last_prediction, vocab_cust['target'])[0]
+                attention = (inputSeq, predTokens, softmax_sims.cpu())
 
-                inputSeq[0][0] = '@start'
-                inputSeq[0][-1] = '@end'
-                predTokens = replace_with_values_1d(last_prediction, vocab_cust['target'])
-                visAttend = (inputSeq, predTokens[0], softmax_sims.cpu())
-
-                return softmax_sims, visAttend
+                return softmax_sims, attention
         else:
             return similarities
 
