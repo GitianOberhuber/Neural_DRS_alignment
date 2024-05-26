@@ -63,13 +63,15 @@
             "type": "auto_regressive_seq_decoder",
             "target_namespace": "target",
             "decoder_net": {
-                "type": "averaged_lstm_cell",
+                "type": "lstm_cell",
                 "decoding_dim": 600,
                 "target_embedding_dim": 300,
-                "attention": {
-                    "type": "dot_product",
-                    "normalize": true
-                },
+                "attention": {                 
+						"type": "bilinear",
+									"vector_dim": 600,    
+												"matrix_dim": 600,
+															"normalize": true 	
+																	},
                 "bidirectional_input": false
             },
             "max_decoding_steps": 1000,
@@ -90,7 +92,7 @@
     },
     "iterator": {
         "type": "basic",
-        "batch_size": 36
+        "batch_size": 12
     },
     "trainer": {
         "optimizer": {
@@ -98,7 +100,7 @@
             "lr": 0.001
         },
         "patience": 15,
-        "num_epochs": 3,
+        "num_epochs": 4,
         "num_serialized_models_to_keep": -1,
         "grad_norm": 0.9,
         "cuda_device": 0,

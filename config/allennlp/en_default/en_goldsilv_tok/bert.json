@@ -32,9 +32,9 @@
         "source_max_tokens": 125,
         "target_max_tokens": 1160,
     },
-    "train_data_path": "data/3.0.0/en/gold_silver/train.rt.alp",
-    "validation_data_path": "data/3.0.0/en/gold/dev.rt.alp",
-    "test_data_path": "data/3.0.0/en/gold/test.rt.alp",
+    "train_data_path": "data/3.0.0/en/gold_silver/train.al.alp",
+    "validation_data_path": "data/3.0.0/en/gold/dev.al.alp",
+    "test_data_path": "data/3.0.0/en/gold/test.al.alp",
     "model": {
         "type": "composed_seq2seq",
         "source_text_embedder": {
@@ -63,19 +63,15 @@
             "type": "auto_regressive_seq_decoder",
             "target_namespace": "target",
             "decoder_net": {
-                "type": "dual_attention_lstm_cell",
+                "type": "lstm_cell",
                 "decoding_dim": 600,
                 "target_embedding_dim": 300,
                 "attention": {
-                    "type": "dot_product",
-                    "normalize": true
-                 },
-                 "attention1": {
-                    "type": "bilinear",
-                    "vector_dim": 600,
-                    "matrix_dim": 600,
-                    "normalize": true
-                 },
+                   "type": "bilinear",
+                   "matrix_dim": 600,
+                   "normalize": true,
+                   "vector_dim": 600
+		},
                 "bidirectional_input": false
             },
             "max_decoding_steps": 1000,
