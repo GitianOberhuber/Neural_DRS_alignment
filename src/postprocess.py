@@ -807,18 +807,9 @@ def do_postprocess(args):
     drss = []
 
 
-    if os.path.exists("/home/krise/Documents/masterarbeit/experiment_results/tok_bilinearAtt_lstm_4epoch_refsep_06_02_24/run1/pp_debug.txt"):
-        # If the file exists, just open it
-        f = open("/home/krise/Documents/masterarbeit/experiment_results/tok_bilinearAtt_lstm_4epoch_refsep_06_02_24/run1/pp_debug.txt", 'r+')
-    else:
-        # If the file doesn't exist, create it and then open it
-        f = open("/home/krise/Documents/masterarbeit/experiment_results/tok_bilinearAtt_lstm_4epoch_refsep_06_02_24/run1/pp_debug.txt", 'w+')
-
 
     # Each line is a DRS, loop over them here one-by-one
     for idx, line in enumerate(pp_info.lines):
-        f.write("\n##############################  " + str(idx) + "  ##############################\n" )
-
         pp_info.cur_idx = idx
         # Restore clause format, we now have a list of clauses (list of strings)
         drs = restore_clauses(line, pp_info)

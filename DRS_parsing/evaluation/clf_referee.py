@@ -661,14 +661,6 @@ def non_subordinating_boxes(box_dict, sub_rel, v=0):
 if __name__ == '__main__':
     args = parse_arguments()
 
-    if os.path.exists("/home/krise/Documents/masterarbeit/experiment_results/tok_bilinearAtt_lstm_4epoch_refsep_06_02_24/run1/pp_debug.txt"):
-        # If the file exists, just open it
-        f = open("/home/krise/Documents/masterarbeit/experiment_results/tok_bilinearAtt_lstm_4epoch_refsep_06_02_24/run1/pp_debug.txt", 'r+')
-    else:
-        # If the file doesn't exist, create it and then open it
-        f = open("/home/krise/Documents/masterarbeit/experiment_results/tok_bilinearAtt_lstm_4epoch_refsep_06_02_24/run1/pp_debug.txt", 'w+')
-
-
     # read clausal forms and raw from the file
     (clfs, raws) = file_to_clfs(args.src, v=args.v)
     assert len(clfs) == len(raws),\

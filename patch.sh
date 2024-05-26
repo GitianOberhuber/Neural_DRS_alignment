@@ -19,10 +19,10 @@ if [ ! -d "DRS_parsing/evaluation" ]; then
     exit 1  # Exit with a non-zero status code to indicate an error
 fi
 
-cp -u -R Neural_DRS_patch/src .
-cp -u -R Neural_DRS_patch/DRS_parsing .
-cp -u -R Neural_DRS_patch/config .
-cp -u -R Neural_DRS_patch/allennlp .
+cp -u -R Neural_DRS_alignment/src .
+cp -u -R Neural_DRS_alignment/DRS_parsing .
+cp -u -R Neural_DRS_alignment/config .
+cp -u -R Neural_DRS_alignment/allennlp .
 
 
 
